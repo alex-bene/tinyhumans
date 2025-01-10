@@ -1,0 +1,21 @@
+[project]
+name = "tinyhumans"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "loguru>=0.7.3",
+    "matplotlib>=3.10.0",
+    "notebook>=7.3.2",
+    "numpy>=2.2.1",
+    "omegaconf>=2.3.0",
+    "opencv-python>=4.10.0.84",
+    "pandas>=2.2.3",
+    "plotly>=5.24.1",
+    "pyrender>=0.1.45",
+    "rich>=13.9.4",
+    "smplx>=0.1.28",
+    "torch<=2.4.1",
+    "trimesh>=4.5.3",
+]
