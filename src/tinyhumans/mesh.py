@@ -1,21 +1,12 @@
-import logging
-
 import torch
 from pytorch3d.renderer import TexturesAtlas, TexturesVertex
 from pytorch3d.structures import Meshes as P3D_Meshes
-from rich.logging import RichHandler
 from trimesh import Trimesh
 
-FORMAT = "%(message)s"
-logging.basicConfig(
-    level="NOTSET",
-    format=FORMAT,
-    datefmt="[%X]",
-    handlers=[RichHandler(rich_tracebacks=True)],
-)
+from src.tinyhumans.tools import get_logger
 
 # Initialize a logger
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Meshes(P3D_Meshes):

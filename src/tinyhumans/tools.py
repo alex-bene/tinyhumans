@@ -7,6 +7,21 @@ from pytorch3d.structures import Meshes
 from pytorch3d.vis.plotly_vis import AxisArgs, plot_batch_individually, plot_scene
 
 
+def get_logger(name: str, level: str = "NOTSET"):
+    import logging
+
+    from rich.logging import RichHandler
+
+    handler = RichHandler(rich_tracebacks=True)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level.upper())
+    logger.addHandler(handler)
+
+    return logger
+
+
 def img_from_array(img_array: np.ndarray, is_bgr: bool = False) -> Image.Image:
     """
     Converts a NumPy array representing image(s) to a list of PIL Image objects.

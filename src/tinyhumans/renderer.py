@@ -1,4 +1,3 @@
-import logging
 import os
 import platform
 from typing import Iterable
@@ -10,22 +9,13 @@ from pyrender import Viewer
 from pyrender.constants import RenderFlags
 from pytorch3d.renderer import TexturesAtlas, TexturesVertex
 from pytorch3d.structures.meshes import join_meshes_as_batch
-from rich.logging import RichHandler
 from trimesh import Trimesh
 
 from src.tinyhumans.mesh import Meshes
-from src.tinyhumans.tools import get_jet_colormap, img_from_array
-
-FORMAT = "%(message)s"
-logging.basicConfig(
-    level="NOTSET",
-    format=FORMAT,
-    datefmt="[%X]",
-    handlers=[RichHandler(rich_tracebacks=True)],
-)
+from src.tinyhumans.tools import get_jet_colormap, get_logger, img_from_array
 
 # Initialize a logger
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Fix for np.infty used by pyrender
 np.infty = np.inf
