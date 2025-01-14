@@ -9,11 +9,12 @@ from pytorch3d.renderer import TexturesAtlas, TexturesVertex
 from pytorch3d.structures import Meshes as P3D_Meshes
 from trimesh import Trimesh
 
-from src.tinyhumans.tools import get_logger
-from src.tinyhumans.types import Pose, ShapeComponents
+from tinyhumans.tools import get_logger
 
 if TYPE_CHECKING:
     from pytorch3d.renderer import Textures
+
+    from tinyhumans.types import Pose, ShapeComponents
 
     MeshesArguents = list[torch.Tensor] | torch.Tensor
 

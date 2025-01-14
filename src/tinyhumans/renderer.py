@@ -12,12 +12,12 @@ import pyrender
 from pyrender import Viewer
 from pyrender.constants import RenderFlags
 
-from src.tinyhumans.tools import get_jet_colormap, get_logger, img_from_array
+from tinyhumans.tools import get_jet_colormap, get_logger, img_from_array
 
 if TYPE_CHECKING:
     from PIL.Image import Image
 
-    from src.tinyhumans.mesh import Meshes
+    from tinyhumans.mesh import Meshes
 
 
 # Initialize a logger
