@@ -1,13 +1,24 @@
+"""Tools for TinyHumans."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import torch
 from PIL import Image
 from pytorch3d.renderer import TexturesVertex
-from pytorch3d.renderer.cameras import CamerasBase
-from pytorch3d.structures import Meshes
 from pytorch3d.vis.plotly_vis import AxisArgs, plot_batch_individually, plot_scene
 
+if TYPE_CHECKING:
+    from logging import Logger
 
-def get_logger(name: str, level: str = "NOTSET"):
+    from pytorch3d.renderer.cameras import CamerasBase
+    from pytorch3d.structures import Meshes
+
+
+def get_logger(name: str, level: str = "NOTSET") -> Logger:
+    """Get a logger with rich formatting."""
     import logging
 
     from rich.logging import RichHandler
@@ -23,12 +34,11 @@ def get_logger(name: str, level: str = "NOTSET"):
 
 
 def img_from_array(img_array: np.ndarray, is_bgr: bool = False) -> Image.Image:
-    """
-    Converts a NumPy array representing image(s) to a list of PIL Image objects.
+    """Convert a NumPy array representing image(s) to a list of PIL Image objects.
 
     Args:
         img_array (np.ndarray): A NumPy array representing the image(s). The array can have the following shapes:
-            - (H, W, C): A color image, where H is height, W is width, and C is the number of channels (e.g., 3 for RGB).
+            - (H, W, C): A color image, where H is height, W is width, and C is the number of channels.
             - (H, W): A grayscale image, where H is height and W is width.
         is_bgr (bool): A boolean indicating whether the input images are in BGR format.
             If True, the function will convert them to RGB. Defaults to False (assumes RGB or grayscale).
@@ -38,6 +48,7 @@ def img_from_array(img_array: np.ndarray, is_bgr: bool = False) -> Image.Image:
 
     Raises:
         ValueError: If the number of dimensions in the input array is not 2D or 3D.
+
     """
     if is_bgr:
         img_array = np.flip(img_array, axis=-1)  # Convert BGR to RGB
@@ -55,12 +66,12 @@ def img_from_array(img_array: np.ndarray, is_bgr: bool = False) -> Image.Image:
 
 
 def imgs_from_array_batch(img_array_batch: np.ndarray, is_bgr: bool = False) -> list[Image.Image]:
-    """
-    Converts a NumPy array representing a batch of image(s) to a list of PIL Image objects.
+    """Convert a NumPy array representing a batch of image(s) to a list of PIL Image objects.
 
     Args:
-        img_array_batch (np.ndarray): A NumPy array representing the batch of images. The array can have the following shapes:
-            - (N, H, W, C): A batch of color images, where N is the batch size, H is height, W is width, and C is the number of channels (e.g., 3 for RGB).
+        img_array_batch (np.ndarray): An array representing the batch of images with one of the following shapes:
+            - (N, H, W, C): A batch of color images, where N is the batch size, H is height, W is width, and C is the
+                number of channels (e.g., 3 for RGB).
             - (N, H, W): A batch of grayscale images, where N is the batch size, H is height, and W is width.
         is_bgr (bool): A boolean indicating whether the input images are in BGR format.
             If True, the function will convert them to RGB. Defaults to False (assumes RGB or grayscale).
@@ -70,8 +81,8 @@ def imgs_from_array_batch(img_array_batch: np.ndarray, is_bgr: bool = False) -> 
 
     Raises:
         ValueError: If the number of dimensions in the input array is not 3D or 4D.
-    """
 
+    """
     if len(img_array_batch.shape) < 3 or len(img_array_batch.shape) > 4:
         msg = f"Invalid number of dimensions {len(img_array_batch.shape)} for batch image array. Must be at least 3D (N, H, W) or 4D (N, H, W, C)."
         raise ValueError(msg)
@@ -80,8 +91,7 @@ def imgs_from_array_batch(img_array_batch: np.ndarray, is_bgr: bool = False) -> 
 
 
 def image_grid(imgs: list[Image.Image], rows: int = 1, cols: int = 1) -> Image.Image:
-    """
-    Create a grid of images.
+    """Create a grid of images.
 
     Args:
         imgs (list[Image.Image]): A list of PIL Image objects representing the images to be arranged in a grid.
@@ -93,6 +103,7 @@ def image_grid(imgs: list[Image.Image], rows: int = 1, cols: int = 1) -> Image.I
 
     Raises:
         ValueError: If the number of images does not match the number of rows and columns.
+
     """
     if len(imgs) != rows * cols:
         msg = "Number of images must match the number of rows and columns."
@@ -118,8 +129,7 @@ def plot_meshes(
     subplot_titles: list | str | None = None,
     viewpoint_cameras: CamerasBase | None = None,
 ):
-    """
-    Plots a batch of meshes, optionally joining them in a single plot or displaying them individually in a grid.
+    """Plot a batch of meshes, optionally joining them in a single plot or displaying them individually in a grid.
 
     Args:
         meshes (pytorch3d.Meshes): A Meshes object containing the meshes to plot.
@@ -143,6 +153,7 @@ def plot_meshes(
 
     Raises:
         ValueError: If `join_direction` is not one of the valid options when `join` is True.
+
     """
     num_meshes = len(meshes)
 
@@ -157,7 +168,8 @@ def plot_meshes(
     elif join_direction == "diagonal":
         shift = torch.tensor([1.0, 0.0, -1.0])
     elif join:
-        raise ValueError('`join_direction` must be one of "right", "left", "backward", "forward", "diagonal"')
+        msg = '`join_direction` must be one of "right", "left", "backward", "forward", "diagonal"'
+        raise ValueError(msg)
 
     if colors_override is not None:
         if not isinstance(colors_override, torch.Tensor):
@@ -176,9 +188,7 @@ def plot_meshes(
         )
 
         fig = plot_scene(
-            {
-                subplot_titles if isinstance(subplot_titles, str) else "Joined meshes": {"mesh": meshes},
-            },
+            {subplot_titles if isinstance(subplot_titles, str) else "Joined meshes": {"mesh": meshes}},
             axis_args=AxisArgs(backgroundcolor="rgb(200,230,200)", showgrid=True, showticklabels=True),
             ncols=1,
             viewpoint_cameras=viewpoint_cameras,
@@ -205,8 +215,7 @@ def plot_meshes(
 
 
 def get_jet_colormap(num_colors: int, dtype: np.dtype = np.float32) -> np.ndarray:
-    """
-    Generator that yeilds RGB values for a jet colormap equivalent.
+    """Generate RGB values for a jet colormap equivalent.
 
     Args:
         num_colors(int): The number of colors to generate.
@@ -223,9 +232,4 @@ def get_jet_colormap(num_colors: int, dtype: np.dtype = np.float32) -> np.ndarra
     b = np.clip(1.5 - 4 * np.abs(values - 0.25), 0, 1)
     colors = np.stack([r, g, b], axis=-1)
 
-    if np.issubdtype(dtype, np.integer):
-        colors = (colors * 255).astype(dtype)
-    else:
-        colors = colors.astype(dtype)
-
-    return colors
+    return (colors * 255).astype(dtype) if np.issubdtype(dtype, np.integer) else colors.astype(dtype)
