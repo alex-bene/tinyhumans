@@ -1,0 +1,42 @@
+line-length = 120
+
+[lint]
+# Never enforce `E501` (line length violations).
+# ignore = ["C901", "E501", "E741", "F402", "F823",]
+# select = ["C", "E", "F", "I", "W"]
+select = ["ALL"]
+ignore = [
+    "ANN002", "ANN003",
+    "C901", "COM812", "COM819",
+    "D107", "D206","D300",
+    "E111","E114","E117",
+    "FBT001","FBT002",
+    "N806", "N812",
+    "PLR0913",
+    "Q000","Q001","Q002","Q003",
+    "TD003", "TD002",
+    "W191",
+]
+
+# Ignore import violations in all `__init__.py` files.
+[lint.per-file-ignores]
+"__init__.py" = ["F401", "D104"]
+"setup.py" = ["D100"]
+
+[lint.extend-per-file-ignores]
+"tests/**/*.py" = [
+    # at least this three should be fine in tests:
+    "ANN201",
+    "SLF001",
+    "D100",
+    "D103",
+    "S101", # asserts allowed in tests...
+    "ARG", # Unused function args -> fixtures nevertheless are functionally relevant...
+    "FBT", # Don't care about booleans as positional arguments in tests, e.g. via @pytest.mark.parametrize()
+    # The below are debateable
+    "PLR2004", # Magic value used in comparison, ...
+    "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
+]
+
+[format]
+skip-magic-trailing-comma = true
