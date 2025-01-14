@@ -15,7 +15,8 @@ dependencies = [
     "pyrender>=0.1.45",
     "rich>=13.9.4",
     "smplx>=0.1.28",
-    "torch<=2.4.1",
+    "tensordict>=0.6.0",
+    "torch>=2.5.1",
     "trimesh>=4.5.3",
 ]
 
