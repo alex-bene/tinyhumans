@@ -6,7 +6,7 @@ line-length = 120
 # select = ["C", "E", "F", "I", "W"]
 select = ["ALL"]
 ignore = [
-    "ANN002", "ANN003",
+    "ANN002", "ANN003", "ANN401",
     "C901", "COM812", "COM819",
     "D107", "D206","D300",
     "E111","E114","E117",
