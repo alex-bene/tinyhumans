@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 # Fix for np.infty used by pyrender
-np.inf = np.inf
+np.infty = np.inf  # noqa: NPY201
 
 
 def set_pyopengl_platform() -> None:
