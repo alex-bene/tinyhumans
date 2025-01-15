@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -11,9 +11,6 @@ from torch import nn
 
 from tinyhumans.mesh import BodyMeshes
 from tinyhumans.types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPose, SMPLPose, SMPLXPose
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class BaseParametricModel(nn.Module):
@@ -116,9 +113,9 @@ class BaseParametricModel(nn.Module):
         return self.blending_weights.dtype
 
     # TODO: I have not seen this at all
-    def load_model_weights(self, pretrained_model_path: str, do_pose_conditioned_shape: bool = False):
+    def load_model_weights(self, pretrained_model_path: str | Path, do_pose_conditioned_shape: bool = False):
         # Load model parameters
-        if pretrained_model_path.endswith(".npz"):
+        if Path(pretrained_model_path).suffix == ".npz":
             model_params_dict: dict[str, np.ndarray] = np.load(pretrained_model_path, encoding="latin1")
         else:
             msg = f"`pretrained_model_path` must be a .npz file: {pretrained_model_path}"
@@ -139,6 +136,17 @@ class BaseParametricModel(nn.Module):
             body_type = {12: "flame", 69: "smpl", 153: "smplh", 162: "smplx", 45: "mano"}[npose_params]
 
         return model_params_dict, body_type
+
+    def get_shape_components(
+        self,
+        shape_components: ShapeComponents | dict | torch.Tensor | None = None,
+        device: torch.device | str | None = None,
+    ) -> ShapeComponents:
+        out = ShapeComponents(
+            shape_components, use_expression=False, use_dmpl=False, device=device if device else self.device
+        )
+        out.valid_attr_sizes = (self.betas_size,)
+        return out
 
     def get_default(self, key: str) -> torch.Tensor:
         if hasattr(self, "default_" + key):
@@ -173,7 +181,7 @@ class BaseParametricModel(nn.Module):
     ) -> BodyMeshes:
         # Make sure the inputs are of the correct type
         poses = self._pose_class(poses)
-        shape_components = ShapeComponents(shape_components)
+        shape_components = self.get_shape_components(shape_components)
 
         # Infer batch size
         batch_size = self.infer_batch_size(poses.to_dict() | shape_components.to_dict() | locals())
@@ -190,7 +198,7 @@ class BaseParametricModel(nn.Module):
 
         # Linear blend skinning
         verts, joints = linear_blend_skinning(
-            betas=shape_components.to_tensor(),
+            betas=shape_components.to_tensor().expand(batch_size, -1),
             pose=pose_tensor,
             v_template=vertices_template.expand(batch_size, -1, -1),
             shapedirs=self.shape_directions,

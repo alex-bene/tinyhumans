@@ -38,7 +38,7 @@ class SMPL(BaseParametricModel):
         # Setup shapes of default parameters
         self.body_pose_size = 63
         self.hand_pose_size = 1 * 3 * 2
-        self.dmpls_size = num_dmpls
+        self.dmpls_size = num_dmpls if num_dmpls is not None else 0
 
         # DMPLs check and load and register dmpl directions
         self.use_dmpl = False
@@ -50,18 +50,16 @@ class SMPL(BaseParametricModel):
             dmpl_directions = torch.from_numpy(np.load(dmpl_filename)["eigvec"][:, :, :num_dmpls]).to(dtype)
             self.shape_directions = torch.cat([self.shape_directions, dmpl_directions], dim=-1)
 
-    @property
-    def default_shape_components(self) -> ShapeComponents:
-        if hasattr(self, "_default_shape_components"):
-            return self._default_shape_components
-
-        self._default_shape_components = ShapeComponents(
-            betas=self.get_default("betas"), batch_size=1, use_expression=False, use_dmpl=self.use_dmpl
+    def get_shape_components(
+        self,
+        shape_components: ShapeComponents | dict | torch.Tensor | None = None,
+        device: torch.device | str | None = None,
+    ) -> ShapeComponents:
+        out = ShapeComponents(
+            shape_components, use_expression=False, use_dmpl=self.use_dmpl, device=device if device else self.device
         )
-        if self.use_dmpl:
-            self._default_shape_components.dmpls = self.get_default("dmpls")
-
-        return self._default_shape_components
+        out.valid_attr_sizes = (self.betas_size, self.dmpls_size, 0)
+        return out
 
 
 class SMPLH(SMPL):
@@ -99,7 +97,7 @@ class SMPLX(SMPLH):
         # Setup shapes of default parameters
         self.jaw_pose_size = 1 * 3
         self.eyes_pose_size = 2 * 3
-        self.expression_size = num_expression
+        self.expression_size = num_expression if num_expression is not None else 0
 
         # Expression directions register
         self.use_expression = num_expression is not None
@@ -109,15 +107,16 @@ class SMPLX(SMPLH):
             expression_directions = torch.from_numpy(self.full_shape_directions[:, :, 300 : (300 + num_expression)])
             self.shape_directions = torch.cat([self.shape_directions, expression_directions.to(dtype)], dim=-1)
 
-    @property
-    def default_shape_components(self) -> ShapeComponents:
-        if hasattr(self, "_default_shape_components"):
-            return self._default_shape_components
-
-        self._default_shape_components = ShapeComponents(
-            betas=self.get_default("betas"), batch_size=1, use_expression=self.use_expression, use_dmpl=False
+    def get_shape_components(
+        self,
+        shape_components: ShapeComponents | dict | torch.Tensor | None = None,
+        device: torch.device | str | None = None,
+    ) -> ShapeComponents:
+        out = ShapeComponents(
+            shape_components,
+            use_expression=self.use_expression,
+            use_dmpl=False,
+            device=device if device else self.device,
         )
-        if self.use_expression:
-            self._default_shape_components.expression = self.get_default("expression")
-
-        return self._default_shape_components
+        out.valid_attr_sizes = (self.betas_size, 0, self.expression_size)
+        return out
