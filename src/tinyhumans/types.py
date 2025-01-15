@@ -6,8 +6,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import torch
-from tensordict import TensorDictBase
-from tensordict.base import _is_leaf_nontensor
 from tensordict.tensordict import TensorDict
 from torch import Size
 
@@ -21,45 +19,6 @@ if TYPE_CHECKING:
 MANO_POSE_SIZE = 15
 SMPL_POSE_SIZE = 21
 FLAME_POSE_SIZE = 4
-
-
-def to_tensordict(self, *, retain_none: bool | None = None) -> T:
-    """Return a regular TensorDict instance from the TensorDictBase.
-
-    Args:
-        retain_none (bool): if ``True``, the ``None`` values from tensorclass instances
-            will be written in the tensordict.
-            Otherwise they will be discarded. Default: ``True``.
-
-            .. note:: from v0.8, the default value will be switched to ``False``.
-
-    Returns:
-        a new TensorDict object containing the same values.
-
-    """
-    # This function MIGHT be useful. So overriding it could break things. But I am gonna ignore it until then!
-
-    return self.__class__(
-        {key: value.clone() for key, value in self.items(is_leaf=_is_leaf_nontensor)},
-        device=self.device,
-        batch_size=self.batch_size,
-        names=self._maybe_names(),
-    )
-
-
-def _convert_to_tensordict(self, dict_value: dict[str, Any], non_blocking: bool | None = None) -> T:
-    return self.__class__(
-        dict_value,
-        batch_size=self.batch_size,
-        device=self.device,
-        names=self._maybe_names(),
-        lock=self.is_locked,
-        non_blocking=non_blocking,
-    )
-
-
-TensorDictBase.to_tensordict = to_tensordict
-TensorDictBase._convert_to_tensordict = _convert_to_tensordict
 
 
 class AutoTensorDict(TensorDict):
@@ -84,39 +43,6 @@ class AutoTensorDict(TensorDict):
             self.auto_device_()
         if not self.batch_size:
             self.auto_batch_size_(1)
-
-    def to_tensordict(self, *, retain_none: bool | None = None) -> T:
-        """Return a regular TensorDict instance from the TensorDictBase.
-
-        Args:
-            retain_none (bool): if ``True``, the ``None`` values from tensorclass instances
-                will be written in the tensordict.
-                Otherwise they will be discarded. Default: ``True``.
-
-                .. note:: from v0.8, the default value will be switched to ``False``.
-
-        Returns:
-            a new TensorDict object containing the same values.
-
-        """
-        # This function MIGHT be useful. So overriding it could break things. But I am gonna ignore it until then!
-
-        return self.__class__(
-            {key: value.clone() for key, value in self.items(is_leaf=_is_leaf_nontensor)},
-            device=self.device,
-            batch_size=self.batch_size,
-            names=self._maybe_names(),
-        )
-
-    def _convert_to_tensordict(self, dict_value: dict[str, Any], non_blocking: bool | None = None) -> T:
-        return self.__class__(
-            dict_value,
-            batch_size=self.batch_size,
-            device=self.device,
-            names=self._maybe_names(),
-            lock=self.is_locked,
-            non_blocking=non_blocking,
-        )
 
 
 class LimitedAttrTensorDictWithDefaults(AutoTensorDict):
