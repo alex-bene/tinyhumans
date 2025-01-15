@@ -175,13 +175,14 @@ def plot_meshes(
         if not isinstance(colors_override, torch.Tensor):
             colors = torch.tensor(colors_override)
         colors = colors.expand(len(meshes), 3)
+        meshes = meshes.clone()
         meshes.textures = TexturesVertex(verts_features=colors)
 
     if join:
-        meshes.offset_verts_(
+        meshes = meshes.offset_verts(
             torch.arange(num_meshes)  # (num_meshes,)
             .view(num_meshes, 1)  # (num_meshes, 1)
-            .repeat(1, meshes._V)  # (num_meshes, num_verts)
+            .repeat(1, meshes.num_verts_per_mesh().max())  # (num_meshes, num_verts)
             .view(-1, 1)  # (num_meshes * num_verts, 1)
             * shift  # (num_meshes * num_verts, 3)
             * 0.7  # scale
