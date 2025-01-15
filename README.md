@@ -14,8 +14,11 @@ After installing `uv` (can be achieved with `brew install uv in mac`) run the fo
 ```bash
 uv python install 3.11
 uv sync
-uv pip install "git+https://github.com/nghorbani/human_body_prior" # to run vposer.ipynb
-uv pip install "git+https://github.com/facebookresearch/pytorch3d" --no-build-isolation
+```
+
+If you also want to run the notebook demo, use:
+```bash
+uv sync --group demo
 ```
 
 ## TODOs

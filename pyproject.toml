@@ -1,23 +1,36 @@
 [project]
 name = "tinyhumans"
 version = "0.1.0"
-description = "Add your description here"
+description = "Centralized library to deal with SMPL-family models"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "loguru>=0.7.3",
-    "matplotlib>=3.10.0",
-    "notebook>=7.3.2",
-    "numpy>=2.2.1",
-    "omegaconf>=2.3.0",
-    "opencv-python>=4.10.0.84",
-    "plotly>=5.24.1",
+    "torch>=2.5.1",
+    "pytorch3d>=0.7.8",
+    "tensordict>=0.6.0",
+    "smplx>=0.1.28",
+    "trimesh>=4.5.3",
     "pyrender>=0.1.45",
     "rich>=13.9.4",
-    "smplx>=0.1.28",
-    "tensordict>=0.6.0",
-    "torch>=2.5.1",
-    "trimesh>=4.5.3",
+]
+
+[tool.uv.sources]
+pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d"}
+human_body_prior = { git = "https://github.com/nghorbani/human_body_prior"}
+
+[tool.uv]
+no-build-isolation-package = ["pytorch3d"]
+
+[dependency-groups]
+demo = [
+    "loguru>=0.7.3",
+    "notebook>=7.3.2",
+    "omegaconf>=2.3.0",
+    "plotly>=5.24.1",
+    "human_body_prior>=2.2.2.0",
+]
+dev = [
+    "pytest>=8.3.4",
 ]
 
 [build-system]
