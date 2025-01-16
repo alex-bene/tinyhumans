@@ -9,22 +9,37 @@ import torch
 from PIL import Image
 from pytorch3d.renderer import TexturesVertex
 from pytorch3d.vis.plotly_vis import AxisArgs, plot_batch_individually, plot_scene
+from rich.style import Style
+from rich.text import Text
 
 if TYPE_CHECKING:
-    from logging import Logger
+    from logging import Logger, LogRecord
 
     from pytorch3d.renderer.cameras import CamerasBase
     from pytorch3d.structures import Meshes
+
+
+def get_level_text(self, record: LogRecord) -> Text:
+    level_name = record.levelname.lower()
+    return (
+        Text.styled("[", "")
+        + Text.styled(level_name.ljust(8), f"logging.level.{level_name.lower()}")
+        + Text.styled("]", "")
+    )
 
 
 def get_logger(name: str, level: str = "NOTSET") -> Logger:
     """Get a logger with rich formatting."""
     import logging
 
+    from rich.console import Console
     from rich.logging import RichHandler
+    from rich.theme import Theme
 
-    handler = RichHandler(rich_tracebacks=True)
-    handler.setFormatter(logging.Formatter("%(message)s"))
+    console = Console(theme=Theme({"log.time": "black", "log.path": Style(color="black", dim=True)}))
+    handler = RichHandler(rich_tracebacks=True, tracebacks_show_locals=True, tracebacks_width=100, console=console)
+    RichHandler.get_level_text = get_level_text
+    handler.setFormatter(logging.Formatter("%(message)s", datefmt="%X"))
 
     logger = logging.getLogger(name)
     logger.setLevel(level.upper())
