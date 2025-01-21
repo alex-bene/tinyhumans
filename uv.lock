@@ -417,11 +417,6 @@ wheels = [
 ]
 
 [[package]]
-name = "human-body-prior"
-version = "2.2.2.0"
-source = { git = "https://github.com/nghorbani/human_body_prior#4c246d8a83ce16d3cff9c79dcf04d81fa440a6bc" }
-
-[[package]]
 name = "idna"
 version = "3.10"
 source = { registry = "https://pypi.org/simple" }
@@ -1848,19 +1843,14 @@ wheels = [
 
 [[package]]
 name = "tensordict"
-version = "0.6.2"
-source = { registry = "https://pypi.org/simple" }
+version = "0.6.2+070ca61"
+source = { git = "https://github.com/pytorch/tensordict?rev=070ca618bcc6b7fadcb4955a1016ca31babd6e36#070ca618bcc6b7fadcb4955a1016ca31babd6e36" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "numpy" },
     { name = "orjson" },
+    { name = "packaging" },
     { name = "torch" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/c4/ddbd7109fef983a726cc135bdd748a7b3747cd3e77dc300ab4cc577a8d64/tensordict-0.6.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:e5132b369ac9e84eb0e9e28d1954f6d1370e06927ab3c502e02a6d35a1ed629a", size = 669700 },
-    { url = "https://files.pythonhosted.org/packages/29/04/a58ed454ad7f8f8a65f6ebe2df279c4d6921234cad3603318cf8a150b0f3/tensordict-0.6.2-cp311-cp311-manylinux1_x86_64.whl", hash = "sha256:3e036ae56532b6308a9e95de29db97f1ec9b83f569c716a602d7d48dc0b47ef5", size = 360364 },
-    { url = "https://files.pythonhosted.org/packages/d2/17/a2bdb51d5d1b2f06debdf8f60c159cf328c778b6cc8103940f2079e2e767/tensordict-0.6.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:529515ffcb0c6ab5d1c0c85798defe8972e5390412c356c79b87f4073e48b537", size = 668892 },
-    { url = "https://files.pythonhosted.org/packages/64/aa/2b562740c8be079aba4bb9eb37cb94ed042d65e48f739577eb70eee617c2/tensordict-0.6.2-cp312-cp312-manylinux1_x86_64.whl", hash = "sha256:6ce86d8f9ed53d1c893e0064729a799eb06371902e2d5a2f3c83c6af010cf3c2", size = 360647 },
 ]
 
 [[package]]
@@ -1894,6 +1884,7 @@ name = "tinyhumans"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "omegaconf" },
     { name = "plotly" },
     { name = "pyrender" },
     { name = "pytorch3d" },
@@ -1906,9 +1897,7 @@ dependencies = [
 
 [package.dev-dependencies]
 demo = [
-    { name = "human-body-prior" },
     { name = "notebook" },
-    { name = "omegaconf" },
 ]
 dev = [
     { name = "pytest" },
@@ -1916,22 +1905,19 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "plotly", specifier = ">=5.24.1" },
     { name = "pyrender", specifier = ">=0.1.45" },
     { name = "pytorch3d", git = "https://github.com/facebookresearch/pytorch3d" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "smplx", specifier = ">=0.1.28" },
-    { name = "tensordict", specifier = ">=0.6.0" },
+    { name = "tensordict", git = "https://github.com/pytorch/tensordict?rev=070ca618bcc6b7fadcb4955a1016ca31babd6e36" },
     { name = "torch", specifier = ">=2.5.1" },
     { name = "trimesh", specifier = ">=4.5.3" },
 ]
 
 [package.metadata.requires-dev]
-demo = [
-    { name = "human-body-prior", git = "https://github.com/nghorbani/human_body_prior" },
-    { name = "notebook", specifier = ">=7.3.2" },
-    { name = "omegaconf", specifier = ">=2.3.0" },
-]
+demo = [{ name = "notebook", specifier = ">=7.3.2" }]
 dev = [{ name = "pytest", specifier = ">=8.3.4" }]
 
 [[package]]
