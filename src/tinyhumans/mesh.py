@@ -19,7 +19,7 @@ from tinyhumans.tools import get_logger
 if TYPE_CHECKING:
     from pytorch3d.renderer import Textures
 
-    from tinyhumans.types import Pose, ShapeComponents
+    from tinyhumans.tiny_types import Pose, ShapeComponents
 
     MeshesArguents = list[torch.Tensor] | torch.Tensor
 

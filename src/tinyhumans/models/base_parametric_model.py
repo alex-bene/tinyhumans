@@ -15,7 +15,7 @@ from smplx.lbs import lbs as linear_blend_skinning
 from torch import nn
 
 from tinyhumans.mesh import BodyMeshes
-from tinyhumans.types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPose, SMPLPose, SMPLXPose
+from tinyhumans.tiny_types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPose, SMPLPose, SMPLXPose
 
 
 class BaseParametricModel(nn.Module):
