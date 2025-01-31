@@ -1,4 +1,9 @@
-"""BodyModel class for TinyHumans."""
+"""Base parametric model for human bodies.
+
+This module defines the BaseParametricModel class, which serves as an abstract base class for parametric 3D human body
+models. It provides common functionalities for loading model parameters, managing shape and pose components, and
+performing linear blend skinning to generate meshes.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +19,27 @@ from tinyhumans.types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPo
 
 
 class BaseParametricModel(nn.Module):
+    """Abstract base class for parametric 3D human body models.
+
+    This class provides common functionalities for loading model parameters, managing shape and pose components, and
+    performing linear blend skinning to generate meshes. It is intended to be subclassed by specific body model classes
+    such as SMPL, SMPLH, and SMPLX.
+
+    Attributes:
+        pose_parts (set[str]): Set of pose parameter groups (e.g., "body", "hand").
+        gender (str): Gender of the model ("neutral", "male", "female").
+        body_type (str): Type of the body model (e.g., "smpl", "smplh", "smplx").
+        _pose_class (type[Pose]): Pose class associated with the body model type.
+        kinematic_tree_table (torch.Tensor): Kinematic tree table for the body model.
+        blending_weights (torch.Tensor): Linear blend skinning weights.
+        default_vertices_template (torch.Tensor): Mean template vertices.
+        joint_regressor (torch.Tensor): Regressor for joint locations given shape.
+        faces (torch.Tensor): Faces of the mesh topology.
+        shape_directions (torch.Tensor): Shape PCA directions.
+        pose_directions (torch.Tensor, optional): Pose PCA directions, if pose-conditioned shape is enabled.
+
+    """
+
     def __init__(
         self,
         pretrained_model_path: str | Path,
@@ -23,6 +49,25 @@ class BaseParametricModel(nn.Module):
         do_pose_conditioned_shape: bool = True,
         dtype: torch.dtype = torch.float32,
     ) -> None:
+        """Initialize BaseParametricModel.
+
+        Args:
+            pretrained_model_path (str | Path): Path to the pretrained model parameters (.npz file).
+            body_type (str, optional): Type of the body model (e.g., "smpl", "smplh", "smplx").
+                If None, it will be inferred from the model parameters if possible. Defaults to None.
+            gender (str, optional): Gender of the model ("neutral", "male", "female"). Defaults to "neutral".
+            num_betas (int, optional): Number of shape parameters (betas). Defaults to 10.
+            do_pose_conditioned_shape (bool, optional): Whether to use pose-conditioned shape displacements.
+                Defaults to True.
+            dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
+
+        Raises:
+            ValueError: If `pretrained_model_path` is not a .npz file.
+            ValueError: If required keys are missing in the model dictionary.
+            ValueError: If `body_type` is not provided and cannot be inferred from model parameters.
+            ValueError: If the provided `body_type` does not match the inferred body type from model parameters.
+
+        """
         super().__init__()
         self.pose_parts = set()
         self.gender = gender
@@ -106,14 +151,34 @@ class BaseParametricModel(nn.Module):
 
     @property
     def device(self) -> torch.device:
+        """torch.device: Device on which the model is loaded."""
         return self.blending_weights.device
 
     @property
     def dtype(self) -> torch.dtype:
+        """torch.dtype: Data type of the model parameters."""
         return self.blending_weights.dtype
 
-    # TODO: I have not seen this at all
-    def load_model_weights(self, pretrained_model_path: str | Path, do_pose_conditioned_shape: bool = False):
+    def load_model_weights(
+        self, pretrained_model_path: str | Path, do_pose_conditioned_shape: bool = False
+    ) -> tuple[dict[str, np.ndarray], str | None]:
+        """Load model weights from a pretrained model file.
+
+        Args:
+            pretrained_model_path (str | Path): Path to the pretrained model parameters (.npz file).
+            do_pose_conditioned_shape (bool, optional): Whether to load pose-conditioned shape parameters.
+                Defaults to False.
+
+        Returns:
+            tuple[dict[str, np.ndarray], str | None]: A tuple containing:
+                - model_params_dict (dict): Dictionary of model parameters loaded from the .npz file.
+                - body_type (str | None): Inferred body type from the model parameters, or None if not inferable.
+
+        Raises:
+            ValueError: If `pretrained_model_path` is not a .npz file.
+            ValueError: If required keys are missing in the model dictionary.
+
+        """
         # Load model parameters
         if Path(pretrained_model_path).suffix == ".npz":
             model_params_dict: dict[str, np.ndarray] = np.load(pretrained_model_path, encoding="latin1")
@@ -142,6 +207,18 @@ class BaseParametricModel(nn.Module):
         shape_components: ShapeComponents | dict | torch.Tensor | None = None,
         device: torch.device | str | None = None,
     ) -> ShapeComponents:
+        """Get ShapeComponents object from input.
+
+        Args:
+            shape_components (ShapeComponents | dict | torch.Tensor | None, optional): Input shape components.
+                Defaults to None.
+            device (torch.device | str | None, optional): Device to put the ShapeComponents object on.
+                Defaults to None (uses model device).
+
+        Returns:
+            ShapeComponents: ShapeComponents object.
+
+        """
         out = ShapeComponents(
             shape_components, use_expression=False, use_dmpl=False, device=device if device else self.device
         )
@@ -149,6 +226,18 @@ class BaseParametricModel(nn.Module):
         return out
 
     def get_default(self, key: str) -> torch.Tensor:
+        """Get default parameter tensor.
+
+        If the default parameter tensor for the given key is not already registered as a buffer, it will be created
+        and registered.
+
+        Args:
+            key (str): Name of the parameter (e.g., "root_position", "root_orientation", "vertices_template").
+
+        Returns:
+            torch.Tensor: Default parameter tensor of shape (1, parameter_size).
+
+        """
         if hasattr(self, "default_" + key):
             return getattr(self, "default_" + key)
 
@@ -161,6 +250,18 @@ class BaseParametricModel(nn.Module):
         return getattr(self, "default_" + key)
 
     def infer_batch_size(self, kwargs: dict) -> int:
+        """Infer batch size from input keyword arguments.
+
+        Args:
+            kwargs (dict): Dictionary of input keyword arguments.
+
+        Returns:
+            int: Batch size inferred from the input tensors.
+
+        Raises:
+            ValueError: If input tensors have inconsistent batch sizes.
+
+        """
         bs = max(len(value) for value in kwargs.values() if torch.is_tensor(value))
 
         if not all(bs == len(value) for value in kwargs.values() if torch.is_tensor(value)):
@@ -179,6 +280,25 @@ class BaseParametricModel(nn.Module):
         vertices_templates: torch.Tensor | None = None,
         transform_poses_to_rotation_matrices: bool = True,
     ) -> BodyMeshes:
+        """Forward pass of the base parametric model.
+
+        Generates body meshes from pose and shape parameters using linear blend skinning.
+
+        Args:
+            poses (Pose | dict | torch.Tensor | None, optional): Pose parameters. Defaults to None.
+            shape_components (ShapeComponents | dict | torch.Tensor | None, optional): Shape parameters.
+                Defaults to None.
+            root_positions (torch.Tensor | None, optional): Root positions of the bodies. Defaults to None.
+            root_orientations (torch.Tensor | None, optional): Root orientations of the bodies. Defaults to None.
+            vertices_templates (torch.Tensor | None, optional): Template vertices. Defaults to None.
+            transform_poses_to_rotation_matrices (bool, optional): Whether to transform pose parameters to rotation
+                matrices. Defaults to True.
+
+        Returns:
+            BodyMeshes: Output body meshes with vertices, faces, joints, poses, shape components, root positions,
+                root orientation, and vertices template.
+
+        """
         # Make sure the inputs are of the correct type
         poses = self._pose_class(poses)
         shape_components = self.get_shape_components(shape_components)

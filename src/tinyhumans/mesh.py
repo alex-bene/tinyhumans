@@ -1,4 +1,9 @@
-"""Meshes class for TinyHumans."""
+"""Meshes class for TinyHumans.
+
+This module defines the Meshes and BodyMeshes classes, which extend PyTorch3D's Meshes class to provide additional
+functionality for working with 3D meshes, including conversion to Trimesh objects and handling of body-specific
+parameters.
+"""
 
 from __future__ import annotations
 
@@ -28,8 +33,8 @@ class Meshes(P3D_Meshes):
     def to_trimesh(self) -> list[Trimesh]:
         """Convert PyTorch3D Meshes objects to Trimesh objects.
 
-        This function handles different texture types (vertex colors, atlas colors)
-        and correctly extracts vertex and face information for creating Trimesh objects.
+        This function handles different texture types (vertex colors, atlas colors) and correctly extracts vertex and
+        face information for creating Trimesh objects.
 
         Args:
             meshes(Meshes | list[Meshes]): A Meshes object or a list of Meshes objects.
@@ -93,6 +98,21 @@ class BodyMeshes(Meshes):
         root_orientation: MeshesArguents | None = None,
         vertices_template: MeshesArguents | None = None,
     ) -> None:
+        """Initialize BodyMeshes.
+
+        Args:
+            verts (MeshesArguents): Mesh vertices.
+            faces (MeshesArguents): Mesh faces.
+            textures (Textures | None, optional): Mesh textures. Defaults to None.
+            verts_normals (MeshesArguents | None, optional): Mesh vertex normals. Defaults to None.
+            joints (MeshesArguents | None, optional): Joint locations. Defaults to None.
+            poses (Pose | None, optional): Pose parameters. Defaults to None.
+            shape_components (ShapeComponents | None, optional): Shape parameters. Defaults to None.
+            root_positions (MeshesArguents | None, optional): Root positions. Defaults to None.
+            root_orientation (MeshesArguents | None, optional): Root orientation. Defaults to None.
+            vertices_template (MeshesArguents | None, optional): Template vertices. Defaults to None.
+
+        """
         super().__init__(verts=verts, faces=faces, textures=textures, verts_normals=verts_normals)
         self.joints = joints
         self.poses = poses

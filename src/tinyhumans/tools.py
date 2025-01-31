@@ -1,4 +1,8 @@
-"""Tools for TinyHumans."""
+"""Tools for TinyHumans.
+
+This module provides various utility functions for TinyHumans, including logging, image manipulation, and mesh
+plotting.
+"""
 
 from __future__ import annotations
 
@@ -15,11 +19,23 @@ from rich.text import Text
 if TYPE_CHECKING:
     from logging import Logger, LogRecord
 
+    from plotly.graph_objs import Figure
     from pytorch3d.renderer.cameras import CamerasBase
     from pytorch3d.structures import Meshes
+    from rich.logging import RichHandler
 
 
-def get_level_text(self, record: LogRecord) -> Text:
+def get_level_text(self: RichHandler, record: LogRecord) -> Text:  # noqa: ARG001
+    """Get the formatted level text for a log record.
+
+    Args:
+        self (RichHandler): The RichHandler instance.
+        record (LogRecord): The log record.
+
+    Returns:
+        Text: The formatted level text.
+
+    """
     level_name = record.levelname.lower()
     return (
         Text.styled("[", "")
@@ -29,7 +45,18 @@ def get_level_text(self, record: LogRecord) -> Text:
 
 
 def get_logger(name: str, level: str = "NOTSET") -> Logger:
-    """Get a logger with rich formatting."""
+    """Get a logger with rich formatting.
+
+    This function creates and configures a logger with rich formatting for console output.
+
+    Args:
+        name (str): The name of the logger.
+        level (str, optional): The logging level. Defaults to "NOTSET".
+
+    Returns:
+        Logger: A configured logger instance.
+
+    """
     import logging
 
     from rich.console import Console
@@ -99,7 +126,10 @@ def imgs_from_array_batch(img_array_batch: np.ndarray, is_bgr: bool = False) -> 
 
     """
     if len(img_array_batch.shape) < 3 or len(img_array_batch.shape) > 4:
-        msg = f"Invalid number of dimensions {len(img_array_batch.shape)} for batch image array. Must be at least 3D (N, H, W) or 4D (N, H, W, C)."
+        msg = (
+            f"Invalid number of dimensions {len(img_array_batch.shape)} for batch image array. "
+            "Must be at least 3D (N, H, W) or 4D (N, H, W, C)."
+        )
         raise ValueError(msg)
 
     return [img_from_array(img_array, is_bgr=is_bgr) for img_array in img_array_batch]
@@ -137,13 +167,13 @@ def plot_meshes(
     meshes: Meshes,
     join: bool = True,
     join_direction: str = "right",
-    colors_override=None,
+    colors_override: torch.Tensor | np.ndarray | list | None = None,
     show: bool = True,
     num_columns: int = -1,
     subplot_size: int = 1000,
     subplot_titles: list | str | None = None,
     viewpoint_cameras: CamerasBase | None = None,
-):
+) -> Figure:
     """Plot a batch of meshes, optionally joining them in a single plot or displaying them individually in a grid.
 
     Args:
@@ -152,7 +182,7 @@ def plot_meshes(
             subplots. Defaults to True.
         join_direction (str, optional): The direction in which to join meshes when `join` is True.
             Options are "right", "left", "backward", "forward", and "diagonal". Defaults to "right".
-        colors_override (array-like, optional):  An array-like object representing the colors to override mesh colors,
+        colors_override (array-like, optional): An array-like object representing the colors to override mesh colors,
             broadcasted to all meshes. Defaults to None.
         show (bool, optional): If True, displays the plot. Defaults to True.
         num_columns (int, optional): The number of columns to use when plotting meshes individually.
