@@ -18,7 +18,6 @@ dependencies = [
 
 [tool.uv.sources]
 pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d"}
-human_body_prior = { git = "https://github.com/nghorbani/human_body_prior"}
 tensordict = { git = "https://github.com/pytorch/tensordict", rev = "070ca618bcc6b7fadcb4955a1016ca31babd6e36" }
 
 [tool.uv]
