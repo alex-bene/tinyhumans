@@ -20,6 +20,10 @@
 #
 # 2020.12.12
 
+#
+# Lightly edited
+#
+
 import glob
 import os
 import os.path as osp
