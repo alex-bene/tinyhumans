@@ -262,9 +262,8 @@ class BaseParametricModel(nn.Module):
             ValueError: If input tensors have inconsistent batch sizes.
 
         """
-        bs = max(len(value) for value in kwargs.values() if torch.is_tensor(value))
-
-        if not all(bs == len(value) for value in kwargs.values() if torch.is_tensor(value)):
+        bs = max(len(value) for value in kwargs.values() if torch.is_tensor(value) and value.ndim > 0)
+        if not all(bs == len(value) for value in kwargs.values() if torch.is_tensor(value) and value.ndim > 0):
             msg = "All tensors must have the same batch size."
             raise ValueError(msg)
 
