@@ -49,6 +49,11 @@ def test_auto_tensor_dict():
     assert auto_dict.batch_size == torch.Size([2])
     assert auto_dict.device == tensor.device
 
+    # Test with other arguments
+    auto_dict = AutoTensorDict({"test": tensor, "test2": True, "test3": "test"})
+    assert auto_dict.batch_size == torch.Size([2])
+    assert auto_dict.device == tensor.device
+
 
 def test_limited_attr_tensor_dict_with_defaults():
     # Test with valid attributes
@@ -214,7 +219,7 @@ def test_flame_pose():
     assert flame_pose.body.shape == (2, 3)
     assert flame_pose.jaw.shape == (2, 3)
     assert flame_pose.eyes.shape == (2, 6)
-    assert (flame_pose.body == tensor[:, :3]).all()
+    assert (flame_pose.body == tensor[:, 11 * 3 : 12 * 3]).all()
     assert (flame_pose.jaw == tensor[:, 63:66]).all()
     assert (flame_pose.eyes == tensor[:, 66:72]).all()
 
@@ -244,7 +249,7 @@ def test_smplx_pose():
     smplx_pose.from_tensor(tensor, model_type="flame")
     assert smplx_pose.jaw.shape == (2, 3)
     assert smplx_pose.eyes.shape == (2, 6)
-    assert (smplx_pose.body[:, :3] == tensor[:, :3]).all()
+    assert (smplx_pose.body[:, 11 * 3 : 12 * 3] == tensor[:, :3]).all()
     assert (smplx_pose.jaw == tensor[:, 3:6]).all()
     assert (smplx_pose.eyes == tensor[:, 6:]).all()
 
