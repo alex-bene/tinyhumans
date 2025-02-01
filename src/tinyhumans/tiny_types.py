@@ -11,7 +11,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import torch
-from tensordict import NonTensorData
 from tensordict.tensordict import TensorDict
 from torch import Size
 
@@ -343,9 +342,9 @@ class SMPLPose(Pose):
         """
         if model_type is not None:
             model_type = model_type.lower()
-            self.check_model_type(model_type)
             if model_type == "smplh":
                 self.body, self.hand = pose_tensor.split([SMPL_POSE_SIZE * 3, 2 * MANO_POSE_SIZE * 3], dim=-1)
+                # TODO: which smplh index corresponds to the smpl hand index?
                 self.hand = torch.cat(
                     [self.hand[:, :3], self.hand[:, MANO_POSE_SIZE * 3 : (MANO_POSE_SIZE + 1) * 3]], dim=-1
                 )
@@ -385,16 +384,12 @@ class MANOPose(Pose):
         """
         if model_type is not None:
             model_type = model_type.lower()
-            if model_type not in {"smplh-l", "smplh-r"}:
-                self.check_model_type(model_type)
-
-            # TODO: I actually don't know if its right then left or the other way around
             if model_type == "smplh-l":
-                self.hand = pose_tensor[:, SMPL_POSE_SIZE * 3 : SMPL_POSE_SIZE * 3 + MANO_POSE_SIZE * 3]
+                self.hand = pose_tensor[:, SMPL_POSE_SIZE * 3 : (SMPL_POSE_SIZE + MANO_POSE_SIZE) * 3]
                 return
             if model_type == "smplh-r":
                 self.hand = pose_tensor[
-                    :, SMPL_POSE_SIZE * 3 + MANO_POSE_SIZE * 3 : SMPL_POSE_SIZE * 3 + 2 * MANO_POSE_SIZE * 3
+                    :, (SMPL_POSE_SIZE + MANO_POSE_SIZE) * 3 : (SMPL_POSE_SIZE + 2 * MANO_POSE_SIZE) * 3
                 ]
                 return
             if model_type != "mano":
@@ -431,21 +426,24 @@ class SMPLHPose(SMPLPose):
         """
         if model_type is not None:
             model_type = model_type.lower()
-            self.check_model_type(model_type)
             if model_type == "smpl":
-                self.body, hand = pose_tensor.split([SMPL_POSE_SIZE * 3, 6], dim=-1)
+                self.body, hand = pose_tensor.split([SMPL_POSE_SIZE * 3, 2 * 3], dim=-1)
                 self.hand = torch.zeros(
                     [len(pose_tensor), 2 * MANO_POSE_SIZE * 3], dtype=pose_tensor.dtype, device=pose_tensor.device
                 )
+                # TODO: which smplh index corresponds to the smpl hand index?
                 self.hand[:, :3] = hand[:, :3]
                 self.hand[:, MANO_POSE_SIZE * 3 : (MANO_POSE_SIZE + 1) * 3] = hand[:, 3:]
                 return
-            # if model_type == "mano":
-            #     self.hand = pose_tensor
-            #     return
+            if model_type == "mano-l":
+                self.hand[:, : MANO_POSE_SIZE * 3] = pose_tensor
+                return
+            if model_type == "mano-r":
+                self.hand[:, MANO_POSE_SIZE * 3 :] = pose_tensor
+                return
             if model_type != "smplh":
                 msg = f"{model_type.capitalize} pose loading to SMPL-H poses is not possible."
-                msg += " Supported model types for loading are: smpl and smplh."
+                msg += " Supported model types for loading are: smpl, smplh, mano-l and mano-r."
                 raise ValueError(msg)
 
         self.body, self.hand = pose_tensor.split([SMPL_POSE_SIZE * 3, 2 * MANO_POSE_SIZE * 3], dim=-1)
@@ -479,13 +477,12 @@ class FLAMEPose(Pose):
         """
         if model_type is not None:
             model_type = model_type.lower()
-            self.check_model_type(model_type)
-            # TODO: need to check which smplx indexes correspond to which flame indexes
             if model_type == "smplx":
                 body, self.jaw, self.eyes, _ = pose_tensor.split(
                     [SMPL_POSE_SIZE * 3, 3, 6, 2 * MANO_POSE_SIZE * 3], dim=-1
                 )
-                self.body = body[:, :3]
+                # flame's body index is the neck which is smplx's 11 index (counting from 0 and ignoring the pelvis)
+                self.body = body[:, 11 * 3 : 12 * 3]
                 return
             if model_type != "flame":
                 msg = f"{model_type.capitalize} pose loading to SMPL-X poses is not possible."
@@ -523,14 +520,13 @@ class SMPLXPose(FLAMEPose):
         """
         if model_type is not None:
             model_type = model_type.lower()
-            self.check_model_type(model_type)
-            # TODO: need to check which smplx indexes correspond to which flame indexes
             if model_type == "flame":
                 body, self.jaw, self.eyes = pose_tensor.split([3, 3, 6], dim=-1)
                 self.body = torch.zeros(
                     [len(pose_tensor), SMPL_POSE_SIZE * 3], dtype=pose_tensor.dtype, device=pose_tensor.device
                 )
-                self.body[:, :3] = body
+                # flame's body index is the neck which is smplx's 11 index (counting from 0 and ignoring the pelvis)
+                self.body[:, 11 * 3 : 12 * 3] = body
                 return
             if model_type != "smplx":
                 msg = f"{model_type.capitalize} pose loading to SMPL-X poses is not possible."
@@ -553,7 +549,7 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
     """
 
     valid_attr_keys: tuple[str, ...] = ("betas", "expression", "dmpls", "use_expression", "use_dmpl")
-    valid_attr_sizes: tuple[tuple[int, ...] | int, ...] = (10, 5, 20)  # SHOULD BE IN ORDER (betas, expression, dmpls)
+    valid_attr_sizes: tuple[tuple[int, ...] | int, ...] = (10, 5, 8)  # SHOULD BE IN ORDER (betas, expression, dmpls)
 
     def __init__(
         self,
@@ -581,17 +577,33 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
             **kwargs (dict[str, Any] | None): Keyword arguments. Defaults to None.
 
         """
-        super().__init__(source, batch_size, device, names, non_blocking, lock, **kwargs)
-        self["use_expression"] = NonTensorData(use_expression)
-        self["use_dmpl"] = NonTensorData(use_dmpl)
+        if (source is not None) and kwargs:
+            msg = "Either a dictionary or a sequence of kwargs must be provided, not both."
+            raise ValueError(msg)
+        source = kwargs if kwargs else source
+        if source is not None:
+            self.check_keys(list(source.keys()), use_expression, use_dmpl)
+        if isinstance(source, dict):
+            source = {key.lower(): value for key, value in source.items()}
+        if source is None:
+            source = {}
+        source["use_expression"] = use_expression
+        source["use_dmpl"] = use_dmpl
+        AutoTensorDict.__init__(self, source, batch_size, device, names, non_blocking, lock)
         self.use_expression = self["use_expression"]
         self.use_dmpl = self["use_dmpl"]
 
-    def check_keys(self, keys: str | Sequence[str]) -> None:
+    def check_keys(
+        self, keys: str | Sequence[str], use_expression: bool | None = None, use_dmpl: bool | None = None
+    ) -> None:
         """Check if keys are valid for the class.
 
         Args:
             keys (str | Sequence[str]): Key or sequence of keys to check.
+            use_expression (bool | None, optional): If not None, use this value for use_expression instead of the
+                value in the class. Defaults to None.
+            use_dmpl (bool | None, optional): If not None, use this value for use_dmpl instead of the value in the
+                class. Defaults to None.
 
         Raises:
             KeyError: If any key is not in valid_attr_keys.
@@ -600,10 +612,15 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
         if keys in ["use_expression", "use_dmpl"]:
             return
 
+        if use_expression is None:
+            use_expression = self.use_expression
+        if use_dmpl is None:
+            use_dmpl = self.use_dmpl
+
         valid_attr_keys = {"betas"}
-        if self["use_expression"]:
+        if use_expression:
             valid_attr_keys.add("expression")
-        if self["use_dmpl"]:
+        if use_dmpl:
             valid_attr_keys.add("dmpls")
         valid_attr_keys.update({"use_expression", "use_dmpl"})
 
@@ -620,7 +637,7 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
         if not msg:
             return
 
-        msg += f" with use_expression={self.use_expression} and use_dmpl={self.use_dmpl}."
+        msg += f" with use_expression={use_expression} and use_dmpl={use_dmpl}."
         msg += f"Valid keys are {valid_attr_keys!r}."
         raise KeyError(msg)
 
