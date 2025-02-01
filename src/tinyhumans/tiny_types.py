@@ -342,19 +342,17 @@ class SMPLPose(Pose):
 
         """
         if model_type is not None:
+            model_type = model_type.lower()
             self.check_model_type(model_type)
-            # TODO: this needs testing
             if model_type == "smplh":
-                self.body, self.hand = pose_tensor.split([SMPL_POSE_SIZE * 3, MANO_POSE_SIZE * 3], dim=-1)
-                self.hand = torch.cat([self.hand[:3], self.hand[MANO_POSE_SIZE * 3 : (MANO_POSE_SIZE + 1) * 3]], dim=-1)
-                return
-            if model_type == "mano":
+                self.body, self.hand = pose_tensor.split([SMPL_POSE_SIZE * 3, 2 * MANO_POSE_SIZE * 3], dim=-1)
                 self.hand = torch.cat(
-                    [pose_tensor[:3], pose_tensor[MANO_POSE_SIZE * 3 : (MANO_POSE_SIZE + 1) * 3]], dim=-1
+                    [self.hand[:, :3], self.hand[:, MANO_POSE_SIZE * 3 : (MANO_POSE_SIZE + 1) * 3]], dim=-1
                 )
                 return
             if model_type != "smpl":
-                msg = f"{model_type.capitalize} pose loading to SMPL poses is not possible."
+                msg = f"{model_type.capitalize} pose loading to SMPL poses is not possible or does not make sense."
+                msg += " Supported model types for loading are: smpl and smplh."
                 raise ValueError(msg)
 
         self.body, self.hand = pose_tensor.split([63, 6], dim=-1)
@@ -386,13 +384,22 @@ class MANOPose(Pose):
 
         """
         if model_type is not None:
-            self.check_model_type(model_type)
-            # TODO: this needs testing
-            if model_type == "smplh":
-                _, self.hand = pose_tensor.split([SMPL_POSE_SIZE * 3, MANO_POSE_SIZE * 3], dim=-1)
+            model_type = model_type.lower()
+            if model_type not in {"smplh-l", "smplh-r"}:
+                self.check_model_type(model_type)
+
+            # TODO: I actually don't know if its right then left or the other way around
+            if model_type == "smplh-l":
+                self.hand = pose_tensor[:, SMPL_POSE_SIZE * 3 : SMPL_POSE_SIZE * 3 + MANO_POSE_SIZE * 3]
+                return
+            if model_type == "smplh-r":
+                self.hand = pose_tensor[
+                    :, SMPL_POSE_SIZE * 3 + MANO_POSE_SIZE * 3 : SMPL_POSE_SIZE * 3 + 2 * MANO_POSE_SIZE * 3
+                ]
                 return
             if model_type != "mano":
                 msg = f"{model_type.capitalize} pose loading to MANO poses is not possible."
+                msg += " Supported model types for loading are: mano and smplh-l and smplh-r."
                 raise ValueError(msg)
 
         self.hand = pose_tensor
@@ -423,22 +430,25 @@ class SMPLHPose(SMPLPose):
 
         """
         if model_type is not None:
+            model_type = model_type.lower()
             self.check_model_type(model_type)
-            # TODO: this needs testing
             if model_type == "smpl":
-                self.body, self.hand = pose_tensor.split([SMPL_POSE_SIZE * 3, 6], dim=-1)
-                self.hand = torch.zeros([MANO_POSE_SIZE * 3, 3], dtype=pose_tensor.dtype, device=pose_tensor.device)
-                self.hand[:3] = self.hand[:3]
-                self.hand[MANO_POSE_SIZE * 3 : (MANO_POSE_SIZE + 1) * 3] = self.hand[3:]
+                self.body, hand = pose_tensor.split([SMPL_POSE_SIZE * 3, 6], dim=-1)
+                self.hand = torch.zeros(
+                    [len(pose_tensor), 2 * MANO_POSE_SIZE * 3], dtype=pose_tensor.dtype, device=pose_tensor.device
+                )
+                self.hand[:, :3] = hand[:, :3]
+                self.hand[:, MANO_POSE_SIZE * 3 : (MANO_POSE_SIZE + 1) * 3] = hand[:, 3:]
                 return
-            if model_type == "mano":
-                self.hand = pose_tensor
-                return
+            # if model_type == "mano":
+            #     self.hand = pose_tensor
+            #     return
             if model_type != "smplh":
                 msg = f"{model_type.capitalize} pose loading to SMPL-H poses is not possible."
+                msg += " Supported model types for loading are: smpl and smplh."
                 raise ValueError(msg)
 
-        self.body, self.hand = pose_tensor.split([SMPL_POSE_SIZE * 3, MANO_POSE_SIZE * 3], dim=-1)
+        self.body, self.hand = pose_tensor.split([SMPL_POSE_SIZE * 3, 2 * MANO_POSE_SIZE * 3], dim=-1)
 
 
 class FLAMEPose(Pose):
@@ -468,12 +478,14 @@ class FLAMEPose(Pose):
 
         """
         if model_type is not None:
+            model_type = model_type.lower()
             self.check_model_type(model_type)
-            # TODO: this needs testing
+            # TODO: need to check which smplx indexes correspond to which flame indexes
             if model_type == "smplx":
-                body, self.jaw, self.eyes, _ = pose_tensor.split([SMPL_POSE_SIZE * 3, 3, 6, MANO_POSE_SIZE * 3], dim=-1)
-                # TODO: no idea which part of the body flame is supposed to take
-                self.body = body[:3]
+                body, self.jaw, self.eyes, _ = pose_tensor.split(
+                    [SMPL_POSE_SIZE * 3, 3, 6, 2 * MANO_POSE_SIZE * 3], dim=-1
+                )
+                self.body = body[:, :3]
                 return
             if model_type != "flame":
                 msg = f"{model_type.capitalize} pose loading to SMPL-X poses is not possible."
@@ -510,17 +522,22 @@ class SMPLXPose(FLAMEPose):
 
         """
         if model_type is not None:
+            model_type = model_type.lower()
             self.check_model_type(model_type)
-            # TODO: this needs testing
+            # TODO: need to check which smplx indexes correspond to which flame indexes
             if model_type == "flame":
-                _, self.jaw, self.eyes = pose_tensor.split([3, 3, 6], dim=-1)
+                body, self.jaw, self.eyes = pose_tensor.split([3, 3, 6], dim=-1)
+                self.body = torch.zeros(
+                    [len(pose_tensor), SMPL_POSE_SIZE * 3], dtype=pose_tensor.dtype, device=pose_tensor.device
+                )
+                self.body[:, :3] = body
                 return
             if model_type != "smplx":
                 msg = f"{model_type.capitalize} pose loading to SMPL-X poses is not possible."
                 raise ValueError(msg)
 
         self.body, self.jaw, self.eyes, self.hand = pose_tensor.split(
-            [SMPL_POSE_SIZE * 3, 3, 6, MANO_POSE_SIZE * 3], dim=-1
+            [SMPL_POSE_SIZE * 3, 3, 6, 2 * MANO_POSE_SIZE * 3], dim=-1
         )
 
 
@@ -535,8 +552,8 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
 
     """
 
-    # SHOULD BE IN ORDER FOR CONCATENATION
     valid_attr_keys: tuple[str, ...] = ("betas", "expression", "dmpls", "use_expression", "use_dmpl")
+    valid_attr_sizes: tuple[tuple[int, ...] | int, ...] = (10, 5, 20)  # SHOULD BE IN ORDER (betas, expression, dmpls)
 
     def __init__(
         self,
@@ -567,6 +584,45 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
         super().__init__(source, batch_size, device, names, non_blocking, lock, **kwargs)
         self["use_expression"] = NonTensorData(use_expression)
         self["use_dmpl"] = NonTensorData(use_dmpl)
+        self.use_expression = self["use_expression"]
+        self.use_dmpl = self["use_dmpl"]
+
+    def check_keys(self, keys: str | Sequence[str]) -> None:
+        """Check if keys are valid for the class.
+
+        Args:
+            keys (str | Sequence[str]): Key or sequence of keys to check.
+
+        Raises:
+            KeyError: If any key is not in valid_attr_keys.
+
+        """
+        if keys in ["use_expression", "use_dmpl"]:
+            return
+
+        valid_attr_keys = {"betas"}
+        if self["use_expression"]:
+            valid_attr_keys.add("expression")
+        if self["use_dmpl"]:
+            valid_attr_keys.add("dmpls")
+        valid_attr_keys.update({"use_expression", "use_dmpl"})
+
+        msg = None
+        if isinstance(keys, str) and (keys.lower() not in valid_attr_keys):
+            msg = f"Key {keys} is not a valid key for {self.__class__.__name__}"
+        elif (
+            not isinstance(keys, str)
+            and isinstance(keys, Sequence)
+            and not all(key.lower() in valid_attr_keys for key in keys)
+        ):
+            msg = f"Sequence {keys} do not contain valid keys for {self.__class__.__name__}"
+
+        if not msg:
+            return
+
+        msg += f" with use_expression={self.use_expression} and use_dmpl={self.use_dmpl}."
+        msg += f"Valid keys are {valid_attr_keys!r}."
+        raise KeyError(msg)
 
     def to_tensor(self) -> Tensor:
         """Convert shape components to a tensor.
@@ -589,16 +645,11 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
         Args:
             shape_components_tensor (Tensor): Input shape components tensor.
 
-        Raises:
-            NotImplementedError: This method is not implemented.
-
         """
-        # if self.use_expression:
-        #     self.expression = shape_components_tensor[:, : self.expression_size]
-        #     full_pose = shape_components_tensor[:, self.expression_size :]
-        # if self.use_dmpl:
-        #     self.dmpls = shape_components_tensor[:, : self.dmpls_size]
-        #     full_pose = shape_components_tensor[:, self.dmpls_size :]
-
-        # self.betas = shape_components_tensor
-        raise NotImplementedError
+        self.betas = shape_components_tensor[:, : self.valid_attr_sizes[0]]
+        if self.use_expression:
+            self.expression = shape_components_tensor[
+                :, self.valid_attr_sizes[0] : self.valid_attr_sizes[0] + self.valid_attr_sizes[1]
+            ]
+        if self.use_dmpl:
+            self.dmpls = shape_components_tensor[:, -self.valid_attr_sizes[-1] :]
