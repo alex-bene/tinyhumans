@@ -14,3 +14,6 @@ wheels/
 
 # Project-specific files
 downloads/
+
+# IDE-specific files
+.vscode/
