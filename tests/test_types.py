@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 import torch
 
-from src.tinyhumans.tiny_types import (
+from src.tinyhumans.types import (
     AutoTensorDict,
     FLAMEPose,
     LimitedAttrTensorDictWithDefaults,

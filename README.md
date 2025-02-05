@@ -21,11 +21,17 @@ If you also want to run the notebook demo, use:
 uv sync --group demo
 ```
 
+## Types
+- **[Poses](src/tinyhumans/types/pose_types.py#26)**: Represents a pose in a body model as rotations with respect to the pelvis (ignores root orientation and translation). These are represented as a modified `TensorDict`.
+- **[ShapesComponents](src/tinyhumans/types/shape_types.py#25)**: Represents a shape component in a body model as a `TensorDict` with shape parameters (betas, expression, DMPL parameters).
+- **[BodyMeshes](src/tinyhumans/mesh.py#84)**: Represents full body meshes based on `pytorch3d.Meshes` with additional functionality. Includes poses, shape components, and root positions and orientations, joints and vertices templates.
+
 ## TODOs
 - [x] Add meshes rendering tools
 - [x] Add SMPL-family body models
 - [x] Fix bug where running `.to(...)`, `.clone()` and everything else copy-related for a `TensorDict` subclass, returns a `TensorDict` object instead of the original subclass. (tracking issue: https://github.com/pytorch/tensordict/issues/1184)
 - [x] Add comments and docstrings
+- [x] Increase performance of conversions including axis angles in Pytorch3D (track PR: https://github.com/facebookresearch/pytorch3d/pull/1948)
 - [ ] Fix bug in tensordict where `bool` non-tensor data are transformed to 0-dim tensors, which prevents setting the batch size (tracking issue: https://github.com/pytorch/tensordict/issues/1199)
 - [ ] Test SMPL-family body models
     - [x] tiny types tests

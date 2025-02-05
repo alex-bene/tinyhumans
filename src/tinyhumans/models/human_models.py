@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 from tinyhumans.models.base_parametric_model import BaseParametricModel
-from tinyhumans.tiny_types import ShapeComponents
+from tinyhumans.types import ShapeComponents
 
 if TYPE_CHECKING:
     from pathlib import Path
