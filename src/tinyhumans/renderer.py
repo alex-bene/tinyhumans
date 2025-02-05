@@ -249,7 +249,7 @@ class PyRenderer(Renderer):
             intensity (float, optional): The intensity of the raymond lighting. Defaults to 1.0.
 
         """
-        for n in Viewer._create_raymond_lights(Viewer):  # noqa: SLF001
+        for n in Viewer._create_raymond_lights(Viewer):
             n.light.intensity = intensity
             if not self.scene.has_node(n):
                 self.scene.add_node(n, parent_node=self._camera_node)
@@ -261,7 +261,7 @@ class PyRenderer(Renderer):
             intensity (float, optional): The intensity of the direct lighting. Defaults to 1.0.
 
         """
-        direct_light = Viewer._create_direct_light(Viewer)  # noqa: SLF001
+        direct_light = Viewer._create_direct_light(Viewer)
         direct_light.light.intensity = intensity
         if not self.scene.has_node(direct_light):
             self.scene.add_node(direct_light, parent_node=self._camera_node)
