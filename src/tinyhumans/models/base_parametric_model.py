@@ -11,11 +11,15 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from smplx.lbs import lbs as linear_blend_skinning
+import torch.nn.functional as F
+from pytorch3d.transforms import axis_angle_to_matrix
 from torch import nn
 
 from tinyhumans.mesh import BodyMeshes
-from tinyhumans.tiny_types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPose, SMPLPose, SMPLXPose
+from tinyhumans.tools import apply_rigid_transform
+from tinyhumans.types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPose, SMPLPose, SMPLXPose
+
+Tensor = torch.Tensor
 
 
 class BaseParametricModel(nn.Module):
@@ -134,20 +138,20 @@ class BaseParametricModel(nn.Module):
 
         # Register buffers
         self.register_buffer("kinematic_tree_table", kinematic_tree_table)
-        self.kinematic_tree_table: torch.Tensor = self.kinematic_tree_table
+        self.kinematic_tree_table: Tensor = self.kinematic_tree_table
         self.register_buffer("blending_weights", blending_weights)
-        self.blending_weights: torch.Tensor = self.blending_weights
+        self.blending_weights: Tensor = self.blending_weights
         self.register_buffer("default_vertices_template", default_vertices_template)
-        self.default_vertices_template: torch.Tensor = self.default_vertices_template
+        self.default_vertices_template: Tensor = self.default_vertices_template
         self.register_buffer("joint_regressor", joint_regressor)
-        self.joint_regressor: torch.Tensor = self.joint_regressor
+        self.joint_regressor: Tensor = self.joint_regressor
         self.register_buffer("faces", faces)
-        self.faces: torch.Tensor = self.faces
+        self.faces: Tensor = self.faces
         self.register_buffer("shape_directions", shape_directions)
-        self.shape_directions: torch.Tensor = self.shape_directions
+        self.shape_directions: Tensor = self.shape_directions
         if do_pose_conditioned_shape:
             self.register_buffer("pose_directions", pose_directions)
-            self.pose_directions: torch.Tensor = self.pose_directions
+            self.pose_directions: Tensor = self.pose_directions
 
     @property
     def device(self) -> torch.device:
@@ -203,9 +207,7 @@ class BaseParametricModel(nn.Module):
         return model_params_dict, body_type
 
     def get_shape_components(
-        self,
-        shape_components: ShapeComponents | dict | torch.Tensor | None = None,
-        device: torch.device | str | None = None,
+        self, shape_components: ShapeComponents | dict | Tensor | None = None, device: torch.device | str | None = None
     ) -> ShapeComponents:
         """Get ShapeComponents object from input.
 
@@ -225,7 +227,7 @@ class BaseParametricModel(nn.Module):
         out.valid_attr_sizes = (self.betas_size,)
         return out
 
-    def get_default(self, key: str) -> torch.Tensor:
+    def get_default(self, key: str) -> Tensor:
         """Get default parameter tensor.
 
         If the default parameter tensor for the given key is not already registered as a buffer, it will be created
@@ -271,13 +273,13 @@ class BaseParametricModel(nn.Module):
 
     def forward(
         self,
-        poses: Pose | dict | torch.Tensor | None = None,
-        shape_components: ShapeComponents | dict | torch.Tensor | None = None,
+        poses: Pose | dict | Tensor | None = None,
+        shape_components: ShapeComponents | dict | Tensor | None = None,
         *,
-        root_positions: torch.Tensor | None = None,
-        root_orientations: torch.Tensor | None = None,
-        vertices_templates: torch.Tensor | None = None,
-        transform_poses_to_rotation_matrices: bool = True,
+        root_positions: Tensor | None = None,
+        root_orientations: Tensor | None = None,
+        vertices_templates: Tensor | None = None,
+        poses_in_axis_angles: bool = True,
     ) -> BodyMeshes:
         """Forward pass of the base parametric model.
 
@@ -290,8 +292,8 @@ class BaseParametricModel(nn.Module):
             root_positions (torch.Tensor | None, optional): Root positions of the bodies. Defaults to None.
             root_orientations (torch.Tensor | None, optional): Root orientations of the bodies. Defaults to None.
             vertices_templates (torch.Tensor | None, optional): Template vertices. Defaults to None.
-            transform_poses_to_rotation_matrices (bool, optional): Whether to transform pose parameters to rotation
-                matrices. Defaults to True.
+            poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations (need to
+                be transformed to rotation matrices in this case). Defaults to True.
 
         Returns:
             BodyMeshes: Output body meshes with vertices, faces, joints, poses, shape components, root positions,
@@ -316,16 +318,11 @@ class BaseParametricModel(nn.Module):
         pose_tensor = torch.cat([root_orientation, poses.to_tensor().expand(batch_size, -1)], dim=-1)
 
         # Linear blend skinning
-        verts, joints = linear_blend_skinning(
+        verts, joints = self.linear_blend_skinning(
             betas=shape_components.to_tensor().expand(batch_size, -1),
             pose=pose_tensor,
-            v_template=vertices_template.expand(batch_size, -1, -1),
-            shapedirs=self.shape_directions,
-            posedirs=self.pose_directions,
-            J_regressor=self.joint_regressor,
-            parents=self.kinematic_tree_table[0],
-            lbs_weights=self.blending_weights,
-            pose2rot=transform_poses_to_rotation_matrices,
+            vertices_template=vertices_template.expand(batch_size, -1, -1),
+            poses_in_axis_angles=poses_in_axis_angles,
         )
 
         return BodyMeshes(
@@ -339,3 +336,64 @@ class BaseParametricModel(nn.Module):
             vertices_template=vertices_template,
             # bStree_table = self.kintree_table
         )
+
+    def linear_blend_skinning(
+        self, betas: Tensor, pose: Tensor, vertices_template: Tensor, poses_in_axis_angles: bool = True
+    ) -> tuple[Tensor, Tensor]:
+        """Perform Linear Blend Skinning with the given shape and pose parameters.
+
+        Args:
+            betas (torch.Tensor): The tensor of shape parameters with shape (batch_size, num_betas)
+            pose (torch.Tensor): The pose parameters in axis-angle format with shape (batch_size, (num_joints + 1) * 3)
+                if poses_in_axis_angles is True, otherwise (batch_size, (num_joints + 1) * 9)
+            vertices_template (torch.Tensor): The template (mean) mesh that will be deformed with shape
+                (batch_size, num_vertices, 3)
+            poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations (need to
+                be transformed to rotation matrices in this case). Defaults to True.
+
+        Returns:
+            torch.Tensor: The vertices of the mesh after applying the shape and pose displacements with shape
+                (batch_size, num_vertices, 3)
+            torch.Tensor: The joints of the model with shape (batch_size, num_joints, 3)
+
+        """
+        # 0. Infer parameters
+        batch_size = max(betas.shape[0], pose.shape[0])
+        device, dtype = betas.device, betas.dtype
+        ## Transform axis-angle rotations into rotation matrices if needed
+        rot_mats = axis_angle_to_matrix(pose.view(-1, 3)).view([batch_size, -1, 3, 3]) if poses_in_axis_angles else pose
+        ## Set the correct rotation matrices shape
+        rot_mats = rot_mats.view(batch_size, -1, 3, 3)
+
+        # 1. Add the per vertex displacement due to the shape
+        ## Same as batched matrix multiplication with implicit batch size expansion
+        ## e.g.: torch.bmm(betas, self.shape_directions.expand(betas.shape[0], -1, -1))
+        ## (B x num_betas) x (V x 3 x num_betas) -> (B x V x 3)
+        verts_shaped = vertices_template + torch.einsum("bi,jki->bjk", betas, self.shape_directions)
+
+        # 2. Add the per vertex displacement due to the pose
+        ident = torch.eye(3, dtype=dtype, device=device)
+        ## Get the pose feature vector (relative rotation matrices for each joint (ignore global rotation) minus identity)
+        pose_feature = rot_mats[:, 1:, :, :] - ident
+        ## Calculate the vertices offsets
+        ## (N x J x 3 x 3) x (J*3*3, V * 3) -> N x V x 3
+        pose_offsets = torch.matmul(pose_feature.view(batch_size, -1), self.pose_directions).view(batch_size, -1, 3)
+        ## Get the vertices considering the pose contributions
+        verts_posed = verts_shaped + pose_offsets
+
+        # 3. Get the joints locations
+        ## Get the joints at rest (based on the shape)
+        ## (B x V x 3) x (J x V) -> B x J x 3
+        joints = torch.einsum("bij,ki->bkj", [verts_shaped, self.joint_regressor])
+        ## Get the global joint location based on the joint rotations (including global orientation)
+        joints_posed, joint_transforms = apply_rigid_transform(rot_mats, joints, self.kinematic_tree_table[0])
+
+        # 5. Do skinning:
+        ## (B x (J + 1) x 4 x 4) x (V x (J + 1)) -> (B x V x 4 x 4)
+        skinning_transforms = torch.einsum("bjik,vj->bvik", [joint_transforms, self.blending_weights])
+        ## Get the homogeneous coordinate representation of the vertices
+        verts_posed = F.pad(verts_posed, (0, 1), mode="constant", value=1)
+        ## (B x V x 4 x 4) x (B x V x 3) -> (B x V x 3)
+        verts = torch.matmul(skinning_transforms, torch.unsqueeze(verts_posed, dim=-1))[:, :, :3, 0]
+
+        return verts, joints_posed

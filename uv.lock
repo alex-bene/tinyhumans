@@ -1776,19 +1776,6 @@ wheels = [
 ]
 
 [[package]]
-name = "smplx"
-version = "0.1.28"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "torch" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/69/eb/51da17b291fb1221317a1ff65a301fb2cf9c6c0dd87a0caec4cbcd06c1da/smplx-0.1.28.tar.gz", hash = "sha256:c3a1e2c3069cdf7a4b34fd250c2484c8bb1a4fd9c14490da9359af5fbc64fbe6", size = 28500 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c9/33/bd37416aec828e7465652d9e2525fe52de0a29a581f1519cc51a74485091/smplx-0.1.28-py3-none-any.whl", hash = "sha256:e8ff3d278a015c097dc86d44a38475da4ac170042943c84c08eee433629406a7", size = 29903 },
-]
-
-[[package]]
 name = "sniffio"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1889,7 +1876,6 @@ dependencies = [
     { name = "pyrender" },
     { name = "pytorch3d" },
     { name = "rich" },
-    { name = "smplx" },
     { name = "tensordict" },
     { name = "torch" },
     { name = "trimesh" },
@@ -1910,7 +1896,6 @@ requires-dist = [
     { name = "pyrender", specifier = ">=0.1.45" },
     { name = "pytorch3d", git = "https://github.com/facebookresearch/pytorch3d" },
     { name = "rich", specifier = ">=13.9.4" },
-    { name = "smplx", specifier = ">=0.1.28" },
     { name = "tensordict", git = "https://github.com/pytorch/tensordict?rev=070ca618bcc6b7fadcb4955a1016ca31babd6e36" },
     { name = "torch", specifier = ">=2.5.1" },
     { name = "trimesh", specifier = ">=4.5.3" },
