@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import torch
+from tensordict import NonTensorData
 from torch import Size
 
 from tinyhumans.types import AutoTensorDict, LimitedAttrTensorDictWithDefaults
@@ -72,11 +73,11 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
             source = {key.lower(): value for key, value in source.items()}
         if source is None:
             source = {}
-        source["use_expression"] = use_expression
-        source["use_dmpl"] = use_dmpl
+        source["use_expression"] = NonTensorData(use_expression)
+        source["use_dmpl"] = NonTensorData(use_dmpl)
         AutoTensorDict.__init__(self, source, batch_size, device, names, non_blocking, lock)
-        self.use_expression = self["use_expression"]
-        self.use_dmpl = self["use_dmpl"]
+        self.use_expression = NonTensorData(self["use_expression"])
+        self.use_dmpl = NonTensorData(self["use_dmpl"])
 
     def check_keys(
         self, keys: str | Sequence[str], use_expression: bool | None = None, use_dmpl: bool | None = None
