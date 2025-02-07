@@ -1,6 +1,6 @@
 """Base parametric model for human bodies.
 
-This module defines the BaseParametricModel class, which serves as an abstract base class for parametric 3D human body
+This module defines the BaseParametricModel class, which serves as a base class for parametric 3D human body
 models. It provides common functionalities for loading model parameters, managing shape and pose components, and
 performing linear blend skinning to generate meshes.
 """
@@ -13,17 +13,15 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from pytorch3d.transforms import axis_angle_to_matrix
-from torch import nn
+from torch import Tensor, nn
 
 from tinyhumans.mesh import BodyMeshes
 from tinyhumans.tools import apply_rigid_transform
 from tinyhumans.types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPose, SMPLPose, SMPLXPose
 
-Tensor = torch.Tensor
-
 
 class BaseParametricModel(nn.Module):
-    """Abstract base class for parametric 3D human body models.
+    """Base class for parametric 3D human body models.
 
     This class provides common functionalities for loading model parameters, managing shape and pose components, and
     performing linear blend skinning to generate meshes. It is intended to be subclassed by specific body model classes
@@ -34,144 +32,182 @@ class BaseParametricModel(nn.Module):
         gender (str): Gender of the model ("neutral", "male", "female").
         body_type (str): Type of the body model (e.g., "smpl", "smplh", "smplx").
         _pose_class (type[Pose]): Pose class associated with the body model type.
-        kinematic_tree_table (torch.Tensor): Kinematic tree table for the body model.
+        kinematic_tree_vector (torch.Tensor): Kinematic tree vector for the body model.
         blending_weights (torch.Tensor): Linear blend skinning weights.
-        default_vertices_template (torch.Tensor): Mean template vertices.
-        joint_regressor (torch.Tensor): Regressor for joint locations given shape.
+        vertices_template (torch.Tensor): Mean template vertices.
+        shaped_verts_to_joints_regressor (nn.Parameter): Regressor for joint locations given shape.
+        pose_blend_components (nn.Parameter): Orthonormal principal components for pose conditioned displacements.
+        shape_blend_components (nn.Parameter): Orthonormal principal components for shape conditioned displacements.
+        shape_coeff_size (int): Number of shape coefficients.
         faces (torch.Tensor): Faces of the mesh topology.
-        shape_directions (torch.Tensor): Shape PCA directions.
-        pose_directions (torch.Tensor, optional): Pose PCA directions, if pose-conditioned shape is enabled.
+        root_position (torch.Tensor): Default root position of the body.
+        root_orientation (torch.Tensor): Default root orientation of the body.
 
     """
 
     def __init__(
         self,
-        pretrained_model_path: str | Path,
-        body_type: str | None = None,
+        body_type: str,
+        vertices_template: Tensor,
+        faces: Tensor,
+        kinematic_tree_vector: Tensor,
+        blending_weights: Tensor,
+        num_joints: int,
+        num_shape_coeffs: int,
         gender: str = "neutral",
-        num_betas: int = 10,
-        do_pose_conditioned_shape: bool = True,
         dtype: torch.dtype = torch.float32,
     ) -> None:
         """Initialize BaseParametricModel.
 
         Args:
-            pretrained_model_path (str | Path): Path to the pretrained model parameters (.npz file).
-            body_type (str, optional): Type of the body model (e.g., "smpl", "smplh", "smplx").
-                If None, it will be inferred from the model parameters if possible. Defaults to None.
+            body_type (str): Type of the body model (e.g., "smpl", "smplh", "smplx").
+            vertices_template (torch.Tensor): Mean template vertices of body at rest.
+            faces (torch.Tensor): Faces of the mesh topology.
+            kinematic_tree_vector (torch.Tensor): Kinematic tree vector for the body model.
+            blending_weights (torch.Tensor): Linear blend skinning weights.
+            num_joints (int): Number of joints in the body model.
+            num_shape_coeffs (int): Number of shape coefficients.
             gender (str, optional): Gender of the model ("neutral", "male", "female"). Defaults to "neutral".
-            num_betas (int, optional): Number of shape parameters (betas). Defaults to 10.
-            do_pose_conditioned_shape (bool, optional): Whether to use pose-conditioned shape displacements.
-                Defaults to True.
             dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
 
         Raises:
-            ValueError: If `pretrained_model_path` is not a .npz file.
-            ValueError: If required keys are missing in the model dictionary.
-            ValueError: If `body_type` is not provided and cannot be inferred from model parameters.
-            ValueError: If the provided `body_type` does not match the inferred body type from model parameters.
+            NotImplementedError: If the class is instantiated directly.
 
         """
+        if self.__class__ == BaseParametricModel:
+            msg = "`BaseParametricModel` should only be instantiated through a subclass"
+            raise NotImplementedError(msg)
+
         super().__init__()
-        self.pose_parts = set()
         self.gender = gender
-
-        # Load model parameters
-        model_params_dict, self.body_type = self.load_model_weights(pretrained_model_path, do_pose_conditioned_shape)
-
-        # Check body type is valid
-        if body_type:
-            if self.body_type is not None and body_type.lower() != self.body_type.lower():
-                msg = (
-                    f"Body type provided or class used ({body_type}) does not match the body type inferred from the "
-                    f"model parameters ({self.body_type.value}). Using the inferred body type."
-                )
-                raise ValueError(msg)
-            if self.body_type is None:
-                SMPLHPose.check_model_type(body_type)
-                self.body_type = body_type
-        elif not self.body_type:
-            msg = "`body_type` must be provided if `posedirs` is not in the model dictionary."
-            raise ValueError(msg)
-
-        self._pose_class = (
-            SMPLPose
-            if self.body_type == "smpl"
-            else SMPLHPose
-            if self.body_type == "smplh"
-            else SMPLXPose
-            if self.body_type == "smplx"
-            else FLAMEPose
-            if self.body_type == "flame"
-            else MANOPose
-            if self.body_type == "mano"
-            else None
-        )
-
-        # indices of parents for each joints
-        kinematic_tree_table = torch.from_numpy(model_params_dict["kintree_table"]).to(torch.long)
-        # LBS weights
-        blending_weights = torch.from_numpy(model_params_dict["weights"]).to(dtype)
-        # Mean template vertices
-        default_vertices_template = torch.from_numpy(model_params_dict["v_template"]).unsqueeze(0).to(dtype)
-        # Regressor for joint locations given shape - 6890 x 24
-        joint_regressor = torch.from_numpy(model_params_dict["J_regressor"]).to(dtype)
-        # Faces
-        faces = torch.from_numpy(model_params_dict["f"]).unsqueeze(0).to(torch.long)
-
-        # The PCA (?) vectors for pose conditioned displacements
-        pose_directions = None
-        if do_pose_conditioned_shape:
-            ## Pose blend shape basis: 6890 x 3 x 207, reshaped to 6890*3 x 207
-            pose_directions = torch.from_numpy(model_params_dict["posedirs"]).to(dtype).flatten(0, 1).T
-
-        # Shape parameters
-        self.full_shape_directions = model_params_dict["shapedirs"]
-        num_betas = self.full_shape_directions.shape[-1] if num_betas < 1 else num_betas
-        ## The PCA vectors for shape conditioned displacements
-        shape_directions = torch.from_numpy(self.full_shape_directions[:, :, :num_betas]).to(dtype)
+        num_vertices = vertices_template.shape[0]
 
         # Setup shapes for default parameters
-        self.betas_size = num_betas
-        self.root_position_size = 3
+        self.shape_coeff_size = num_shape_coeffs
+
         self.root_orientation_size = 3
 
-        # Register buffers
-        self.register_buffer("kinematic_tree_table", kinematic_tree_table)
-        self.kinematic_tree_table: Tensor = self.kinematic_tree_table
-        self.register_buffer("blending_weights", blending_weights)
+        # Check body type is valid
+        Pose.check_model_type(body_type)
+        self.body_type = body_type
+
+        # Set pose class to use
+        self._pose_class = {
+            "smpl": SMPLPose,
+            "smplh": SMPLHPose,
+            "smplx": SMPLXPose,
+            "flame": FLAMEPose,
+            "mano": MANOPose,
+        }.get(self.body_type, None)
+
+        # Parameters of body in rest pose
+        ## indices of parents for each joints (num_joints)
+        self.register_buffer("kinematic_tree_vector", torch.from_numpy(kinematic_tree_vector).to(torch.long))
+        self.kinematic_tree_vector: Tensor = self.kinematic_tree_vector
+        ## LBS weights (num_vertices x num_joints)
+        self.register_buffer("blending_weights", torch.from_numpy(blending_weights).to(dtype))
         self.blending_weights: Tensor = self.blending_weights
-        self.register_buffer("default_vertices_template", default_vertices_template)
-        self.default_vertices_template: Tensor = self.default_vertices_template
-        self.register_buffer("joint_regressor", joint_regressor)
-        self.joint_regressor: Tensor = self.joint_regressor
-        self.register_buffer("faces", faces)
+        ## Vertices template at rest (num_vertices x 3)
+        self.register_buffer("vertices_template", torch.from_numpy(vertices_template).to(dtype))
+        self.vertices_template: Tensor = self.vertices_template
+        ## Faces (num_faces x 3)
+        self.register_buffer("faces", torch.from_numpy(faces).to(torch.long))
         self.faces: Tensor = self.faces
-        self.register_buffer("shape_directions", shape_directions)
-        self.shape_directions: Tensor = self.shape_directions
-        if do_pose_conditioned_shape:
-            self.register_buffer("pose_directions", pose_directions)
-            self.pose_directions: Tensor = self.pose_directions
+        ## Root pose
+        self.register_buffer("root_position", torch.zeros(3, dtype=dtype), persistent=False)
+        self.root_position: Tensor = self.root_position
+        self.register_buffer("root_orientation", torch.zeros(3, dtype=dtype), persistent=False)
+        self.root_orientation: Tensor = self.root_orientation
 
-    @property
-    def device(self) -> torch.device:
-        """torch.device: Device on which the model is loaded."""
-        return self.blending_weights.device
+        # Learned body parameters
+        ## Regressor for joint locations given shape (num_joints x num_vertices)
+        self.shaped_verts_to_joints_regressor = nn.Parameter(torch.rand(num_vertices, num_joints, dtype=dtype))
+        ## The orthonormal principal components for pose conditioned displacements ((num_joints-1)*9, num_vertices*3)
+        ### One rotation matrix for each joint except the root joint
+        self.pose_blend_components = nn.Parameter(torch.rand((num_joints - 1) * 9, num_vertices * 3, dtype=dtype))
+        ## The orthonormal principal components for shape conditioned displacements (num_vertices, 3, num_shape_coeffs)
+        self.shape_blend_components = nn.Parameter(torch.rand(num_vertices, num_shape_coeffs, dtype=dtype))
 
-    @property
-    def dtype(self) -> torch.dtype:
-        """torch.dtype: Data type of the model parameters."""
-        return self.blending_weights.dtype
+    @classmethod
+    def load_shape_components(
+        cls, model_params_dict: dict[str, Tensor], num_betas: int | None = None, dtype: torch.dtype = torch.float32
+    ) -> Tensor:
+        """Load shape components from model parameters.
 
-    def load_model_weights(
-        self, pretrained_model_path: str | Path, do_pose_conditioned_shape: bool = False
-    ) -> tuple[dict[str, np.ndarray], str | None]:
+        Args:
+            model_params_dict (dict[str, Tensor]): Dictionary of model parameters.
+            num_betas (int | None, optional): Number of shape parameters (betas). Defaults to None.
+            dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
+
+        Returns:
+            Tensor: Shape components tensor.
+
+        """
+        return torch.from_numpy(model_params_dict["shapedirs"][:, :, :num_betas]).to(dtype)
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_model_path: str | Path,
+        num_betas: int | None = None,
+        dtype: torch.dtype = torch.float32,
+        **kwargs,
+    ) -> BaseParametricModel:
+        """Load a pre-trained model.
+
+        Args:
+            pretrained_model_path (str | Path): Path to the pretrained model parameters (.npz file).
+            num_betas (int | None, optional): Number of shape parameters (betas). Defaults to None.
+            dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
+            **kwargs: Additional keyword arguments passed to the model constructor.
+
+        Returns:
+            BaseParametricModel: A pre-trained BaseParametricModel instance.
+
+        """
+        # Load model parameters
+        model_params_dict, body_type = cls.load_model_weights(pretrained_model_path)
+
+        # Regressor for joint locations given shape (num_joints x num_vertices)
+        shaped_verts_to_joints_regressor = torch.from_numpy(model_params_dict["J_regressor"]).to(dtype)
+        # The orthonormal principal components for pose conditioned displacements (num_pose_points*3 x num_vertices*3)
+        pose_blend_components = torch.from_numpy(model_params_dict["posedirs"]).flatten(0, 1).T.to(dtype)
+        # The orthonormal principal components for shape conditioned displacements (num_vertices x 3 x num_shape_coeffs)
+        shape_blend_components = cls.load_shape_components(model_params_dict, num_betas, dtype=dtype, **kwargs)
+        num_betas = shape_blend_components.shape[-1]
+
+        if cls == BaseParametricModel:
+            msg = "`BaseParametricModel` should only be instantiated through a subclass"
+            raise NotImplementedError(msg)
+
+        # Create model
+        obj: BaseParametricModel = cls(
+            body_type=body_type,
+            num_betas=num_betas,
+            num_joints=shaped_verts_to_joints_regressor.shape[0],
+            vertices_template=model_params_dict["v_template"],
+            faces=model_params_dict["f"],
+            kinematic_tree_vector=model_params_dict["kintree_table"][0],
+            blending_weights=model_params_dict["weights"],
+            **kwargs,
+        )
+
+        # Set pretrained parameters
+        obj.shaped_verts_to_joints_regressor = nn.Parameter(shaped_verts_to_joints_regressor)
+        obj.shape_blend_components = nn.Parameter(shape_blend_components)
+        obj.pose_blend_components = nn.Parameter(pose_blend_components)
+
+        # Set evaluation mode
+        obj.eval()
+
+        return obj
+
+    @classmethod
+    def load_model_weights(cls, pretrained_model_path: str | Path) -> tuple[dict[str, np.ndarray], str | None]:
         """Load model weights from a pretrained model file.
 
         Args:
             pretrained_model_path (str | Path): Path to the pretrained model parameters (.npz file).
-            do_pose_conditioned_shape (bool, optional): Whether to load pose-conditioned shape parameters.
-                Defaults to False.
 
         Returns:
             tuple[dict[str, np.ndarray], str | None]: A tuple containing:
@@ -191,20 +227,27 @@ class BaseParametricModel(nn.Module):
             raise ValueError(msg)
 
         # Check that all required keys are present in the model dictionary
-        should_exist_in_dict = ["v_template", "f", "shapedirs", "J_regressor", "kintree_table", "weights"] + (
-            ["posedirs"] if do_pose_conditioned_shape else []
-        )
+        should_exist_in_dict = ["v_template", "f", "shapedirs", "J_regressor", "kintree_table", "weights", "posedirs"]
+
         for key in should_exist_in_dict:
             if key not in model_params_dict:
                 msg = f"Key {key} not found in model dictionary read from {pretrained_model_path}"
                 raise ValueError(msg)
 
-        body_type = None
-        if "posedirs" in model_params_dict:
-            npose_params = model_params_dict["posedirs"].shape[2] // 3
-            body_type = {12: "flame", 69: "smpl", 153: "smplh", 162: "smplx", 45: "mano"}[npose_params]
+        npose_params = model_params_dict["posedirs"].shape[2] // 3
+        body_type = {12: "flame", 69: "smpl", 153: "smplh", 162: "smplx", 45: "mano"}[npose_params]
 
         return model_params_dict, body_type
+
+    @property
+    def device(self) -> torch.device:
+        """torch.device: Device on which the model is loaded."""
+        return self.blending_weights.device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """torch.dtype: Data type of the model parameters."""
+        return self.blending_weights.dtype
 
     def get_shape_components(
         self, shape_components: ShapeComponents | dict | Tensor | None = None, device: torch.device | str | None = None
@@ -224,32 +267,8 @@ class BaseParametricModel(nn.Module):
         out = ShapeComponents(
             shape_components, use_expression=False, use_dmpl=False, device=device if device else self.device
         )
-        out.valid_attr_sizes = (self.betas_size,)
+        out.valid_attr_sizes = (self.shape_coeff_size,)
         return out
-
-    def get_default(self, key: str) -> Tensor:
-        """Get default parameter tensor.
-
-        If the default parameter tensor for the given key is not already registered as a buffer, it will be created
-        and registered.
-
-        Args:
-            key (str): Name of the parameter (e.g., "root_position", "root_orientation", "vertices_template").
-
-        Returns:
-            torch.Tensor: Default parameter tensor of shape (1, parameter_size).
-
-        """
-        if hasattr(self, "default_" + key):
-            return getattr(self, "default_" + key)
-
-        self.register_buffer(
-            "default_" + key,
-            torch.zeros(1, getattr(self, key + "_size"), dtype=self.dtype, device=self.device),
-            persistent=False,
-        )
-
-        return getattr(self, "default_" + key)
 
     def infer_batch_size(self, kwargs: dict) -> int:
         """Infer batch size from input keyword arguments.
@@ -278,7 +297,6 @@ class BaseParametricModel(nn.Module):
         *,
         root_positions: Tensor | None = None,
         root_orientations: Tensor | None = None,
-        vertices_templates: Tensor | None = None,
         poses_in_axis_angles: bool = True,
     ) -> BodyMeshes:
         """Forward pass of the base parametric model.
@@ -291,7 +309,6 @@ class BaseParametricModel(nn.Module):
                 Defaults to None.
             root_positions (torch.Tensor | None, optional): Root positions of the bodies. Defaults to None.
             root_orientations (torch.Tensor | None, optional): Root orientations of the bodies. Defaults to None.
-            vertices_templates (torch.Tensor | None, optional): Template vertices. Defaults to None.
             poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations (need to
                 be transformed to rotation matrices in this case). Defaults to True.
 
@@ -302,17 +319,16 @@ class BaseParametricModel(nn.Module):
         """
         # Make sure the inputs are of the correct type
         poses = self._pose_class(poses)
-        shape_components = self.get_shape_components(shape_components)
+        shape_components = self.get_shape_components(shape_components, device=self.device)
 
         # Infer batch size
         batch_size = self.infer_batch_size(poses.to_dict() | shape_components.to_dict() | locals())
 
         # Fill in default values if None
-        root_positions = self.get_default("root_position") if root_positions is None else root_positions
+        root_positions = self.root_position if root_positions is None else root_positions
         root_positions = root_positions.expand(batch_size, -1)
-        root_orientation = self.get_default("root_orientation") if root_orientations is None else root_orientations
+        root_orientation = self.root_orientation if root_orientations is None else root_orientations
         root_orientation = root_orientation.expand(batch_size, -1)
-        vertices_template = self.get_default("vertices_template") if vertices_templates is None else vertices_templates
 
         # Get pose components
         pose_tensor = torch.cat([root_orientation, poses.to_tensor().expand(batch_size, -1)], dim=-1)
@@ -321,7 +337,7 @@ class BaseParametricModel(nn.Module):
         verts, joints = self.linear_blend_skinning(
             betas=shape_components.to_tensor().expand(batch_size, -1),
             pose=pose_tensor,
-            vertices_template=vertices_template.expand(batch_size, -1, -1),
+            vertices_template=self.vertices_template.expand(batch_size, -1, -1),
             poses_in_axis_angles=poses_in_axis_angles,
         )
 
@@ -333,7 +349,7 @@ class BaseParametricModel(nn.Module):
             shape_components=shape_components,
             root_positions=root_positions,
             root_orientation=root_orientation,
-            vertices_template=vertices_template,
+            vertices_template=self.vertices_template,
             # bStree_table = self.kintree_table
         )
 
@@ -343,18 +359,19 @@ class BaseParametricModel(nn.Module):
         """Perform Linear Blend Skinning with the given shape and pose parameters.
 
         Args:
-            betas (torch.Tensor): The tensor of shape parameters with shape (batch_size, num_betas)
+            betas (torch.Tensor): The tensor of shape parameters with shape (batch_size, num_betas).
             pose (torch.Tensor): The pose parameters in axis-angle format with shape (batch_size, (num_joints + 1) * 3)
-                if poses_in_axis_angles is True, otherwise (batch_size, (num_joints + 1) * 9)
+                if poses_in_axis_angles is True, otherwise (batch_size, (num_joints + 1) * 9).
             vertices_template (torch.Tensor): The template (mean) mesh that will be deformed with shape
-                (batch_size, num_vertices, 3)
+                (batch_size, num_vertices, 3).
             poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations (need to
                 be transformed to rotation matrices in this case). Defaults to True.
 
         Returns:
-            torch.Tensor: The vertices of the mesh after applying the shape and pose displacements with shape
-                (batch_size, num_vertices, 3)
-            torch.Tensor: The joints of the model with shape (batch_size, num_joints, 3)
+            tuple[torch.Tensor, torch.Tensor]:
+                - The vertices of the mesh after applying the shape and pose displacements with shape
+                  (batch_size, num_vertices, 3).
+                - The joints of the model with shape (batch_size, num_joints, 3).
 
         """
         # 0. Infer parameters
@@ -369,7 +386,7 @@ class BaseParametricModel(nn.Module):
         ## Same as batched matrix multiplication with implicit batch size expansion
         ## e.g.: torch.bmm(betas, self.shape_directions.expand(betas.shape[0], -1, -1))
         ## (B x num_betas) x (V x 3 x num_betas) -> (B x V x 3)
-        verts_shaped = vertices_template + torch.einsum("bi,jki->bjk", betas, self.shape_directions)
+        verts_shaped = vertices_template + torch.einsum("bi,jki->bjk", betas, self.shape_blend_components)
 
         # 2. Add the per vertex displacement due to the pose
         ident = torch.eye(3, dtype=dtype, device=device)
@@ -377,16 +394,18 @@ class BaseParametricModel(nn.Module):
         pose_feature = rot_mats[:, 1:, :, :] - ident
         ## Calculate the vertices offsets
         ## (N x J x 3 x 3) x (J*3*3, V * 3) -> N x V x 3
-        pose_offsets = torch.matmul(pose_feature.view(batch_size, -1), self.pose_directions).view(batch_size, -1, 3)
+        pose_offsets = torch.matmul(pose_feature.view(batch_size, -1), self.pose_blend_components).view(
+            batch_size, -1, 3
+        )
         ## Get the vertices considering the pose contributions
         verts_posed = verts_shaped + pose_offsets
 
         # 3. Get the joints locations
         ## Get the joints at rest (based on the shape)
         ## (B x V x 3) x (J x V) -> B x J x 3
-        joints = torch.einsum("bij,ki->bkj", [verts_shaped, self.joint_regressor])
+        joints = torch.einsum("bij,ki->bkj", [verts_shaped, self.shaped_verts_to_joints_regressor])
         ## Get the global joint location based on the joint rotations (including global orientation)
-        joints_posed, joint_transforms = apply_rigid_transform(rot_mats, joints, self.kinematic_tree_table[0])
+        joints_posed, joint_transforms = apply_rigid_transform(rot_mats, joints, self.kinematic_tree_vector)
 
         # 5. Do skinning:
         ## (B x (J + 1) x 4 x 4) x (V x (J + 1)) -> (B x V x 4 x 4)
