@@ -16,11 +16,12 @@ from pytorch3d.transforms import axis_angle_to_matrix
 from torch import Tensor, nn
 
 from tinyhumans.mesh import BodyMeshes
+from tinyhumans.models.base_model import BaseModel
 from tinyhumans.tools import apply_rigid_transform
 from tinyhumans.types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPose, SMPLPose, SMPLXPose
 
 
-class BaseParametricModel(nn.Module):
+class BaseParametricModel(BaseModel):
     """Base class for parametric 3D human body models.
 
     This class provides common functionalities for loading model parameters, managing shape and pose components, and
@@ -130,27 +131,33 @@ class BaseParametricModel(nn.Module):
 
     @classmethod
     def load_shape_components(
-        cls, model_params_dict: dict[str, Tensor], num_betas: int | None = None, dtype: torch.dtype = torch.float32
+        cls,
+        model_params_dict: dict[str, Tensor],
+        num_betas: int | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype = torch.float32,
     ) -> Tensor:
         """Load shape components from model parameters.
 
         Args:
             model_params_dict (dict[str, Tensor]): Dictionary of model parameters.
             num_betas (int | None, optional): Number of shape parameters (betas). Defaults to None.
+            device (torch.device | None, optional): Device to put the shape components on. Defaults to None.
             dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
 
         Returns:
             Tensor: Shape components tensor.
 
         """
-        return torch.from_numpy(model_params_dict["shapedirs"][:, :, :num_betas]).to(dtype)
+        return torch.from_numpy(model_params_dict["shapedirs"][:, :, :num_betas]).to(device, dtype)
 
     @classmethod
     def from_pretrained(
         cls,
         pretrained_model_path: str | Path,
         num_betas: int | None = None,
-        dtype: torch.dtype = torch.float32,
+        device_map: str | torch.device | None = "auto",
+        torch_dtype: torch.dtype = torch.float32,
         **kwargs,
     ) -> BaseParametricModel:
         """Load a pre-trained model.
@@ -158,22 +165,40 @@ class BaseParametricModel(nn.Module):
         Args:
             pretrained_model_path (str | Path): Path to the pretrained model parameters (.npz file).
             num_betas (int | None, optional): Number of shape parameters (betas). Defaults to None.
-            dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
+            device_map (str | torch.device): Device to map the model weights to.
+            torch_dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
             **kwargs: Additional keyword arguments passed to the model constructor.
 
         Returns:
             BaseParametricModel: A pre-trained BaseParametricModel instance.
 
         """
+        pretrained_model_path: Path = Path(pretrained_model_path)
+        if not pretrained_model_path.exists():
+            msg = f"Could not find the pretrained model path: {pretrained_model_path}"
+            raise ValueError(msg)
+
+        if device_map == "auto":
+            device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+        elif isinstance(device_map, str):
+            device = torch.device(device_map)
+        elif isinstance(device_map, torch.device) or device_map is None:
+            device = device_map
+        else:
+            msg = f"Invalid device_map: {device_map}"
+            raise ValueError(msg)
+
         # Load model parameters
-        model_params_dict, body_type = cls.load_model_weights(pretrained_model_path)
+        model_params_dict, body_type = cls._load_model_weights(pretrained_model_path)
 
         # Regressor for joint locations given shape (num_joints x num_vertices)
-        shaped_verts_to_joints_regressor = torch.from_numpy(model_params_dict["J_regressor"]).to(dtype)
-        # The orthonormal principal components for pose conditioned displacements (num_pose_points*3 x num_vertices*3)
-        pose_blend_components = torch.from_numpy(model_params_dict["posedirs"]).flatten(0, 1).T.to(dtype)
-        # The orthonormal principal components for shape conditioned displacements (num_vertices x 3 x num_shape_coeffs)
-        shape_blend_components = cls.load_shape_components(model_params_dict, num_betas, dtype=dtype, **kwargs)
+        shaped_verts_to_joints_regressor = torch.from_numpy(model_params_dict["J_regressor"]).to(device, torch_dtype)
+        # The orthonormal principal components for pose conditioned displacements (num_pose_points*3, num_vertices*3)
+        pose_blend_components = torch.from_numpy(model_params_dict["posedirs"]).flatten(0, 1).T.to(device, torch_dtype)
+        # The orthonormal principal components for shape conditioned displacements (num_vertices, 3, num_shape_coeffs)
+        shape_blend_components = cls.load_shape_components(
+            model_params_dict, num_betas, dtype=torch_dtype, device=device, **kwargs
+        )
         num_betas = shape_blend_components.shape[-1]
 
         if cls == BaseParametricModel:
@@ -193,17 +218,17 @@ class BaseParametricModel(nn.Module):
         )
 
         # Set pretrained parameters
-        obj.shaped_verts_to_joints_regressor = nn.Parameter(shaped_verts_to_joints_regressor)
-        obj.shape_blend_components = nn.Parameter(shape_blend_components)
-        obj.pose_blend_components = nn.Parameter(pose_blend_components)
+        obj.shaped_verts_to_joints_regressor = nn.Parameter(shaped_verts_to_joints_regressor).to(device, torch_dtype)
+        obj.shape_blend_components = nn.Parameter(shape_blend_components).to(device, torch_dtype)
+        obj.pose_blend_components = nn.Parameter(pose_blend_components).to(device, torch_dtype)
 
         # Set evaluation mode
         obj.eval()
 
-        return obj
+        return obj.to(device, torch_dtype)
 
     @classmethod
-    def load_model_weights(cls, pretrained_model_path: str | Path) -> tuple[dict[str, np.ndarray], str | None]:
+    def _load_model_weights(cls, pretrained_model_path: str | Path) -> tuple[dict[str, np.ndarray], str | None]:
         """Load model weights from a pretrained model file.
 
         Args:

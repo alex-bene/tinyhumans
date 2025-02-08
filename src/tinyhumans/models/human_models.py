@@ -83,12 +83,13 @@ class SMPL(BaseParametricModel):
         )
 
     @classmethod
-    def load_shape_components(
+    def _load_shape_components(
         cls,
         model_params_dict: dict[str, Tensor],
         num_betas: int | None = None,
         num_dmpls: int | None = None,
         dmpl_filename: str | Path | None = None,
+        device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> Tensor:
         """Load shape components from model parameters.
@@ -99,6 +100,7 @@ class SMPL(BaseParametricModel):
             num_dmpls (int | None, optional): Number of DMPL shape parameters. Defaults to None.
             dmpl_filename (str | Path | None, optional): Path to the DMPL eigenvectors file (.npz).
                 Required if `num_dmpls` > 0. Defaults to None.
+            device (torch.device | None, optional): Device to put the shape components on. Defaults to None.
             dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
 
         Returns:
@@ -108,7 +110,7 @@ class SMPL(BaseParametricModel):
             ValueError: If `dmpl_filename` is not provided when `num_dmpls` > 0.
 
         """
-        shape_blend_components = super().load_shape_components(model_params_dict, num_betas, dtype)
+        shape_blend_components = super()._load_shape_components(model_params_dict, num_betas, device, dtype)
 
         if num_dmpls is None:
             num_dmpls = 300 - model_params_dict["shapedirs"].shape[-1]
@@ -119,7 +121,9 @@ class SMPL(BaseParametricModel):
             if dmpl_filename is None:
                 msg = "`dmpl_filename` should be provided when using dmpls!"
                 raise ValueError(msg)
-            dmpl_blend_components = torch.from_numpy(np.load(dmpl_filename)["eigvec"][:, :, :num_dmpls]).to(dtype)
+            dmpl_blend_components = torch.from_numpy(np.load(dmpl_filename)["eigvec"][:, :, :num_dmpls]).to(
+                device, dtype
+            )
             # Shape + DMPL components -> Shape components (num_vertices x 3 x num_shape_coeffs)
             shape_blend_components = torch.cat([shape_blend_components, dmpl_blend_components], dim=-1)
 
@@ -239,11 +243,12 @@ class SMPLX(BaseParametricModel):
         )
 
     @classmethod
-    def load_shape_components(
+    def _load_shape_components(
         cls,
         model_params_dict: dict[str, Tensor],
         num_betas: int | None = None,
         num_expression_coeffs: int | None = None,
+        device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> Tensor:
         """Load shape components from model parameters.
@@ -252,13 +257,14 @@ class SMPLX(BaseParametricModel):
             model_params_dict (dict[str, Tensor]): Dictionary of model parameters.
             num_betas (int | None, optional): Number of shape parameters (betas). Defaults to None.
             num_expression_coeffs (int | None, optional): Number of expression shape parameters. Defaults to None.
+            device (torch.device | None, optional): Device to put the shape components on. Defaults to None.
             dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
 
         Returns:
             Tensor: Shape components tensor.
 
         """
-        shape_blend_components = super().load_shape_components(model_params_dict, num_betas, dtype)
+        shape_blend_components = super()._load_shape_components(model_params_dict, num_betas, device, dtype)
 
         if num_expression_coeffs is None:
             num_expression_coeffs = 300 - model_params_dict["shapedirs"].shape[-1]
@@ -270,7 +276,7 @@ class SMPLX(BaseParametricModel):
         if num_expression_coeffs > 0:
             expression_blend_components = torch.from_numpy(
                 model_params_dict["shapedirs"][:, :, 300 : (300 + num_expression_coeffs)]
-            ).to(dtype)
+            ).to(device, dtype)
             # Shape + Expression components -> Shape components (num_vertices x 3 x num_shape_coeffs)
             shape_blend_components = torch.cat([shape_blend_components, expression_blend_components], dim=-1)
 
