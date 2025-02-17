@@ -12,11 +12,10 @@ dependencies = [
     "trimesh>=4.5.3",
     "pyrender>=0.1.45",
     "rich>=13.9.4",
-    "omegaconf>=2.3.0", # currently used by vposer
 ]
 
 [tool.uv.sources]
-pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d"}
+pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d", rev = "7a3c0cbc9d7b0e70ef39b7f3c35e9ce2b7376f32"}
 tensordict = { git = "https://github.com/pytorch/tensordict", rev = "070ca618bcc6b7fadcb4955a1016ca31babd6e36" }
 
 [tool.uv]
