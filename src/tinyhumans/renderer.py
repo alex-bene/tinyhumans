@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import platform
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 import pyrender
@@ -55,6 +55,17 @@ class PyRenderer:
     This class extends the Renderer class and provides functionality for setting up scenes, cameras, lighting, and
     rendering meshes with various options using pyrender.
     """
+
+    render_flags_map: ClassVar[dict[str, RenderFlags]] = {
+        "RGBA": RenderFlags.RGBA,
+        "all_wireframe": RenderFlags.ALL_WIREFRAME,
+        "shadows": RenderFlags.SHADOWS_DIRECTIONAL | RenderFlags.SHADOWS_SPOT,
+        "vertex_normals": RenderFlags.VERTEX_NORMALS,
+        "face_normals": RenderFlags.FACE_NORMALS,
+        "skip_cull_faces": RenderFlags.SKIP_CULL_FACES,
+        "segmentation": RenderFlags.SEG,
+        "flat": RenderFlags.FLAT,
+    }
 
     def __init__(
         self,
@@ -300,7 +311,7 @@ class PyRenderer:
 
         Args:
             meshes (Trimesh | list[Trimesh]): The meshes to render.
-            render_params (dict[str, bool] | None, optional): Rendering parameters. Defaults to None.
+            render_params (dict[str, bool], optional): Rendering parameters dictionary. Defaults to {}.
             meshes_colors (list | None, optional): A list of colors for each mesh. Applies only when
                 `render_segmentation` is True. Defaults to None.
             bg_color (tuple[int, int, int] | None, optional): The background color of the rendered image. If None,
@@ -320,25 +331,15 @@ class PyRenderer:
         prev_bg_color = self.background_color
         self.background_color = bg_color
 
-        render_params = {
-            "render_face_normals": False,
-            "render_in_RGBA": False,
-            "render_segmentation": False,
-            "render_shadows": True,
-            "render_vertex_normals": False,
-            "render_wireframe": False,
-            "skip_cull_faces": False,
-        } | (render_params or {})
-
         # Set rotation angle and direction based on view
         if view not in ["front", "back", "left", "right", "top", "bottom"]:
             msg = f"Invalid view: {view}, must be one of 'front', 'back', 'left', 'right', 'top', 'bottom'"
             raise ValueError(msg)
         if view in ["front", "back", "left", "right"]:
-            rotation_angle = {"front": 0.0, "left": 90.0, "back": 180.0, "right": 270.0}[view]
+            rotation_angle = {"front": 0.0, "left": 90.0, "back": 180.0, "right": -90.0}[view]
             rotation_direction = [0.0, 1.0, 0.0]
         else:  # if view in ["top", "bottom"]:
-            rotation_angle = {"top": 90.0, "bottom": 270.0}[view]
+            rotation_angle = {"top": 90.0, "bottom": -90.0}[view]
             rotation_direction = [1.0, 0.0, 0.0]
 
         self.scene.mesh_nodes.clear()
@@ -346,30 +347,24 @@ class PyRenderer:
         if isinstance(meshes, Trimesh):
             meshes = [meshes]
         for i, mesh in enumerate(meshes):
-            rot = transformations.rotation_matrix(np.radians(rotation_angle), rotation_direction)
-            mesh.apply_transform(rot)
+            rtd_mesh = mesh
+            if view != "front":
+                rot = transformations.rotation_matrix(np.radians(rotation_angle), rotation_direction)
+                rtd_mesh = mesh.copy().apply_transform(rot)
             node_id = self.scene.add(
-                pyrender.Mesh.from_trimesh(mesh, smooth=mesh.visual.kind != "face", material=material), f"mesh_{i}"
+                pyrender.Mesh.from_trimesh(rtd_mesh, smooth=mesh.visual.kind != "face", material=material), f"mesh_{i}"
             )
             if meshes_colors:
                 seg_node_map[node_id] = meshes_colors[i]
 
         flags = RenderFlags.NONE
-        if render_params["render_in_RGBA"]:
-            flags |= RenderFlags.RGBA
-        if render_params["render_wireframe"]:
-            flags |= RenderFlags.ALL_WIREFRAME
-        if render_params["render_shadows"]:
-            flags |= RenderFlags.SHADOWS_DIRECTIONAL | RenderFlags.SHADOWS_SPOT
-        if render_params["render_vertex_normals"]:
-            flags |= RenderFlags.VERTEX_NORMALS
-        if render_params["render_face_normals"]:
-            flags |= RenderFlags.FACE_NORMALS
-        if render_params["skip_cull_faces"]:
-            flags |= RenderFlags.SKIP_CULL_FACES
-        if render_params["render_segmentation"]:
-            flags |= RenderFlags.SEG
-            seg_node_map = dict(zip(self.scene.mesh_nodes, get_jet_colormap(len(meshes), dtype=np.uint8)))
+        if render_params:
+            for param_name, flag in PyRenderer.render_flags_map.items():
+                if render_params.get(param_name, False):
+                    flags |= flag
+
+            if render_params.get("segmentation", False):
+                seg_node_map = dict(zip(self.scene.mesh_nodes, get_jet_colormap(len(meshes), dtype=np.uint8)))
 
         color, depth = self.renderer.render(self.scene, flags=flags, seg_node_map=seg_node_map)
 
