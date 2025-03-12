@@ -17,10 +17,6 @@ from trimesh import Trimesh
 from tinyhumans.tools import get_logger
 
 if TYPE_CHECKING:
-    from pytorch3d.renderer import Textures
-
-    from tinyhumans.types import Pose, ShapeComponents
-
     MeshesArguents = list[torch.Tensor] | torch.Tensor
 
 # Initialize a logger
@@ -79,44 +75,3 @@ class Meshes(P3D_Meshes):
             )
 
         return trimeshes
-
-
-class BodyMeshes(Meshes):
-    """Extend the internal Meshes class to support additional functionality for body meshes."""
-
-    def __init__(
-        self,
-        verts: MeshesArguents,
-        faces: MeshesArguents,
-        textures: Textures | None = None,
-        *,
-        verts_normals: MeshesArguents | None = None,
-        joints: MeshesArguents | None = None,
-        poses: Pose | None = None,
-        shape_components: ShapeComponents | None = None,
-        root_positions: MeshesArguents | None = None,
-        root_orientation: MeshesArguents | None = None,
-        vertices_template: MeshesArguents | None = None,
-    ) -> None:
-        """Initialize BodyMeshes.
-
-        Args:
-            verts (MeshesArguents): Mesh vertices.
-            faces (MeshesArguents): Mesh faces.
-            textures (Textures | None, optional): Mesh textures. Defaults to None.
-            verts_normals (MeshesArguents | None, optional): Mesh vertex normals. Defaults to None.
-            joints (MeshesArguents | None, optional): Joint locations. Defaults to None.
-            poses (Pose | None, optional): Pose parameters. Defaults to None.
-            shape_components (ShapeComponents | None, optional): Shape parameters. Defaults to None.
-            root_positions (MeshesArguents | None, optional): Root positions. Defaults to None.
-            root_orientation (MeshesArguents | None, optional): Root orientation. Defaults to None.
-            vertices_template (MeshesArguents | None, optional): Template vertices. Defaults to None.
-
-        """
-        super().__init__(verts=verts, faces=faces, textures=textures, verts_normals=verts_normals)
-        self.joints = joints
-        self.poses = poses
-        self.shape_components = shape_components
-        self.root_positions = root_positions
-        self.root_orientation = root_orientation
-        self.vertices_template = vertices_template
