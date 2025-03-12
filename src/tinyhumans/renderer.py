@@ -14,14 +14,12 @@ import numpy as np
 import pyrender
 from pyrender import Viewer
 from pyrender.constants import RenderFlags
-from trimesh import transformations
+from trimesh import Trimesh, transformations
 
 from tinyhumans.tools import get_jet_colormap, get_logger, img_from_array
 
 if TYPE_CHECKING:
     from PIL.Image import Image
-
-    from tinyhumans.mesh import Meshes
 
 
 # Initialize a logger
@@ -291,7 +289,7 @@ class PyRenderer:
 
     def __call__(
         self,
-        meshes: Meshes | list[Meshes],
+        meshes: Trimesh | list[Trimesh],
         render_params: dict[str, bool] | None = None,
         meshes_colors: list | None = None,
         bg_color: tuple[int, int, int] | None = None,
@@ -301,7 +299,7 @@ class PyRenderer:
         """Render the meshes.
 
         Args:
-            meshes (Meshes | list[Meshes]): The meshes to render.
+            meshes (Trimesh | list[Trimesh]): The meshes to render.
             render_params (dict[str, bool] | None, optional): Rendering parameters. Defaults to None.
             meshes_colors (list | None, optional): A list of colors for each mesh. Applies only when
                 `render_segmentation` is True. Defaults to None.
@@ -345,7 +343,9 @@ class PyRenderer:
 
         self.scene.mesh_nodes.clear()
         seg_node_map = {}
-        for i, mesh in enumerate(meshes.to_trimesh()):
+        if isinstance(meshes, Trimesh):
+            meshes = [meshes]
+        for i, mesh in enumerate(meshes):
             rot = transformations.rotation_matrix(np.radians(rotation_angle), rotation_direction)
             mesh.apply_transform(rot)
             node_id = self.scene.add(
