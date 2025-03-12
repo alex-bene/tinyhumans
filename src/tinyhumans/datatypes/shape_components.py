@@ -7,17 +7,17 @@ shape components (ShapeComponents).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 from tensordict import NonTensorData
 from torch import Size
 
-from tinyhumans.types import AutoTensorDict, LimitedAttrTensorDictWithDefaults
+from tinyhumans.datatypes import AutoTensorDict, LimitedAttrTensorDictWithDefaults
 
 if TYPE_CHECKING:
     from tensordict.base import CompatibleType, T
-    from tensordict.utils import DeviceType
+    from tensordict.utils import DeviceType, IndexType
     from torch import Tensor
 
     NestedKey = str | tuple["NestedKeyType", ...]  # type: ignore  # noqa: F821, PGH003
@@ -34,8 +34,13 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
 
     """
 
-    valid_attr_keys: tuple[str, ...] = ("betas", "expression", "dmpls", "use_expression", "use_dmpl")
-    valid_attr_sizes: tuple[tuple[int, ...] | int, ...] = (10, 5, 8)  # SHOULD BE IN ORDER (betas, expression, dmpls)
+    default_attr_sizes: ClassVar[dict[tuple[int, ...] | int]] = {
+        "betas": 10,
+        "expression": 5,
+        "dmpls": 8,
+        "use_expression": False,
+        "use_dmpl": False,
+    }
 
     def __init__(
         self,
@@ -73,11 +78,11 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
             source = {key.lower(): value for key, value in source.items()}
         if source is None:
             source = {}
-        source["use_expression"] = NonTensorData(use_expression)
-        source["use_dmpl"] = NonTensorData(use_dmpl)
+        source["use_expression"] = use_expression
+        source["use_dmpl"] = use_dmpl
         AutoTensorDict.__init__(self, source, batch_size, device, names, non_blocking, lock)
-        self.use_expression = NonTensorData(self["use_expression"])
-        self.use_dmpl = NonTensorData(self["use_dmpl"])
+        self.use_expression = self["use_expression"]
+        self.use_dmpl = self["use_dmpl"]
 
     def check_keys(
         self, keys: str | Sequence[str], use_expression: bool | None = None, use_dmpl: bool | None = None
@@ -149,10 +154,25 @@ class ShapeComponents(LimitedAttrTensorDictWithDefaults):
             shape_components_tensor (Tensor): Input shape components tensor.
 
         """
-        self.betas = shape_components_tensor[:, : self.valid_attr_sizes[0]]
+        betas_size = self.default_attr_sizes["betas"]
+        self.betas = shape_components_tensor[:, :betas_size]
         if self.use_expression:
             self.expression = shape_components_tensor[
-                :, self.valid_attr_sizes[0] : self.valid_attr_sizes[0] + self.valid_attr_sizes[1]
+                :, betas_size : betas_size + self.default_attr_sizes["expression"]
             ]
         if self.use_dmpl:
-            self.dmpls = shape_components_tensor[:, -self.valid_attr_sizes[-1] :]
+            self.dmpls = shape_components_tensor[:, -self.default_attr_sizes["dmpls"] :]
+
+    def __setattr__(self, key: IndexType, value: Any) -> None:
+        """Set item in ShapeComponents.
+
+        Overrides TensorDict.__setitem__ to automatically infer device and batch size.
+
+        Args:
+            key (IndexType): Key to set.
+            value (Any): Value to set.
+
+        """
+        if key in ["use_expression", "use_dmpl"]:
+            value = NonTensorData(value)
+        super().__setattr__(key, value)

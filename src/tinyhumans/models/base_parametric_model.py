@@ -15,10 +15,18 @@ import torch.nn.functional as F
 from pytorch3d.transforms import axis_angle_to_matrix
 from torch import Tensor, nn
 
-from tinyhumans.mesh import BodyMeshes
+from tinyhumans.datatypes import (
+    FLAMEPoses,
+    MANOPoses,
+    ParametricModelOutput,
+    Poses,
+    ShapeComponents,
+    SMPLHPoses,
+    SMPLPoses,
+    SMPLXPoses,
+)
 from tinyhumans.models.base_model import BaseModel
 from tinyhumans.tools import apply_rigid_transform
-from tinyhumans.types import FLAMEPose, MANOPose, Pose, ShapeComponents, SMPLHPose, SMPLPose, SMPLXPose
 
 
 class BaseParametricModel(BaseModel):
@@ -29,10 +37,9 @@ class BaseParametricModel(BaseModel):
     such as SMPL, SMPLH, and SMPLX.
 
     Attributes:
-        pose_parts (set[str]): Set of pose parameter groups (e.g., "body", "hand").
         gender (str): Gender of the model ("neutral", "male", "female").
         body_type (str): Type of the body model (e.g., "smpl", "smplh", "smplx").
-        _pose_class (type[Pose]): Pose class associated with the body model type.
+        _pose_class (type[Poses]): Poses class associated with the body model type.
         kinematic_tree_vector (torch.Tensor): Kinematic tree vector for the body model.
         blending_weights (torch.Tensor): Linear blend skinning weights.
         vertices_template (torch.Tensor): Mean template vertices.
@@ -89,16 +96,16 @@ class BaseParametricModel(BaseModel):
         self.root_orientation_size = 3
 
         # Check body type is valid
-        Pose.check_model_type(body_type)
+        Poses.check_model_type(body_type)
         self.body_type = body_type
 
         # Set pose class to use
         self._pose_class = {
-            "smpl": SMPLPose,
-            "smplh": SMPLHPose,
-            "smplx": SMPLXPose,
-            "flame": FLAMEPose,
-            "mano": MANOPose,
+            "smpl": SMPLPoses,
+            "smplh": SMPLHPoses,
+            "smplx": SMPLXPoses,
+            "flame": FLAMEPoses,
+            "mano": MANOPoses,
         }.get(self.body_type, None)
 
         # Parameters of body in rest pose
@@ -114,7 +121,7 @@ class BaseParametricModel(BaseModel):
         ## Faces (num_faces x 3)
         self.register_buffer("faces", torch.from_numpy(faces).to(torch.long))
         self.faces: Tensor = self.faces
-        ## Root pose
+        ## Default root pose
         self.register_buffer("root_position", torch.zeros(3, dtype=dtype), persistent=False)
         self.root_position: Tensor = self.root_position
         self.register_buffer("root_orientation", torch.zeros(3, dtype=dtype), persistent=False)
@@ -130,7 +137,7 @@ class BaseParametricModel(BaseModel):
         self.shape_blend_components = nn.Parameter(torch.rand(num_vertices, num_shape_coeffs, dtype=dtype))
 
     @classmethod
-    def load_shape_components(
+    def _load_shape_components(
         cls,
         model_params_dict: dict[str, Tensor],
         num_betas: int | None = None,
@@ -196,7 +203,7 @@ class BaseParametricModel(BaseModel):
         # The orthonormal principal components for pose conditioned displacements (num_pose_points*3, num_vertices*3)
         pose_blend_components = torch.from_numpy(model_params_dict["posedirs"]).flatten(0, 1).T.to(device, torch_dtype)
         # The orthonormal principal components for shape conditioned displacements (num_vertices, 3, num_shape_coeffs)
-        shape_blend_components = cls.load_shape_components(
+        shape_blend_components = cls._load_shape_components(
             model_params_dict, num_betas, dtype=torch_dtype, device=device, **kwargs
         )
         num_betas = shape_blend_components.shape[-1]
@@ -317,19 +324,19 @@ class BaseParametricModel(BaseModel):
 
     def forward(
         self,
-        poses: Pose | dict | Tensor | None = None,
+        poses: Poses | dict | Tensor | None = None,
         shape_components: ShapeComponents | dict | Tensor | None = None,
         *,
         root_positions: Tensor | None = None,
         root_orientations: Tensor | None = None,
         poses_in_axis_angles: bool = True,
-    ) -> BodyMeshes:
+    ) -> ParametricModelOutput:
         """Forward pass of the base parametric model.
 
         Generates body meshes from pose and shape parameters using linear blend skinning.
 
         Args:
-            poses (Pose | dict | torch.Tensor | None, optional): Pose parameters. Defaults to None.
+            poses (Poses | dict | torch.Tensor | None, optional): Poses parameters. Defaults to None.
             shape_components (ShapeComponents | dict | torch.Tensor | None, optional): Shape parameters.
                 Defaults to None.
             root_positions (torch.Tensor | None, optional): Root positions of the bodies. Defaults to None.
@@ -366,14 +373,13 @@ class BaseParametricModel(BaseModel):
             poses_in_axis_angles=poses_in_axis_angles,
         )
 
-        return BodyMeshes(
+        return ParametricModelOutput(
             verts=verts + root_positions.unsqueeze(dim=1),
-            faces=self.faces.expand(batch_size, -1, -1),
             joints=joints + root_positions.unsqueeze(dim=1).expand(batch_size, -1, -1),
             poses=poses,
             shape_components=shape_components,
             root_positions=root_positions,
-            root_orientation=root_orientation,
+            root_orientations=root_orientation,
             vertices_template=self.vertices_template,
             # bStree_table = self.kintree_table
         )

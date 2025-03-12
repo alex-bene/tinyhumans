@@ -12,8 +12,8 @@ import numpy as np
 import torch
 from torch import Tensor
 
+from tinyhumans.datatypes import ShapeComponents
 from tinyhumans.models.base_parametric_model import BaseParametricModel
-from tinyhumans.types import ShapeComponents
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,16 +26,11 @@ class SMPL(BaseParametricModel):
     specific parameters and configurations, including handling of DMPL shape components.
 
     Attributes:
-        body_pose_size (int): Size of body pose parameters (63).
-        hand_pose_size (int): Size of hand pose parameters (6).
         dmpls_size (int): Size of DMPL shape parameters, if used.
         use_dmpl (bool): Flag indicating whether DMPL shape components are used.
         betas_size (int): Size of the betas shape parameters.
 
     """
-
-    body_pose_size = 21 * 3
-    hand_pose_size = 1 * 3 * 2
 
     def __init__(
         self,
@@ -155,22 +150,8 @@ class SMPL(BaseParametricModel):
         return out
 
 
-class SMPLH(SMPL):
-    """SMPLH body model class.
-
-    This class implements the SMPLH body model, inheriting from SMPL. It specializes the SMPL model to include hand
-    pose parameters with a larger size.
-
-    Attributes:
-        body_pose_size (int): Size of body pose parameters (63).
-        hand_pose_size (int): Size of hand pose parameters (90).
-        dmpls_size (int): Size of DMPL shape parameters, if used.
-        use_dmpl (bool): Flag indicating whether DMPL shape components are used.
-        betas_size (int): Size of the betas shape parameters.
-
-    """
-
-    hand_pose_size = 15 * 3 * 2
+"""SMPLH body model class."""
+SMPLH = SMPL
 
 
 class SMPLX(BaseParametricModel):
@@ -180,21 +161,11 @@ class SMPLX(BaseParametricModel):
     expression and jaw/eye pose parameters.
 
     Attributes:
-        pose_parts (set[str]): Set of pose parameter groups, updated to include "jaw" and "eyes".
-        body_pose_size (int): Size of body pose parameters (63).
-        hand_pose_size (int): Size of hand pose parameters (6).
-        jaw_pose_size (int): Size of jaw pose parameters (3).
-        eyes_pose_size (int): Size of eye pose parameters (6).
         expression_coeffs_size (int): Size of expression shape parameters, if used.
         use_expression (bool): Flag indicating whether expression shape components are used.
         betas_size (int): Size of the betas shape parameters.
 
     """
-
-    body_pose_size = 21 * 3
-    hand_pose_size = 1 * 3 * 2
-    jaw_pose_size = 1 * 3
-    eyes_pose_size = 2 * 3
 
     def __init__(
         self,

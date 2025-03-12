@@ -4,17 +4,18 @@ from typing import TYPE_CHECKING
 
 import pytest
 import torch
+from tensordict import NonTensorData
 
-from src.tinyhumans.types import (
+from src.tinyhumans.datatypes import (
     AutoTensorDict,
-    FLAMEPose,
+    FLAMEPoses,
     LimitedAttrTensorDictWithDefaults,
-    MANOPose,
-    Pose,
+    MANOPoses,
+    Poses,
     ShapeComponents,
-    SMPLHPose,
-    SMPLPose,
-    SMPLXPose,
+    SMPLHPoses,
+    SMPLPoses,
+    SMPLXPoses,
 )
 
 if TYPE_CHECKING:
@@ -50,15 +51,14 @@ def test_auto_tensor_dict():
     assert auto_dict.device == tensor.device
 
     # Test with other arguments
-    auto_dict = AutoTensorDict({"test": tensor, "test2": True, "test3": "test"})
+    auto_dict = AutoTensorDict({"test": tensor, "test2": NonTensorData(True), "test3": "test"})
     assert auto_dict.batch_size == torch.Size([2])
     assert auto_dict.device == tensor.device
 
 
 def test_limited_attr_tensor_dict_with_defaults():
     # Test with valid attributes
-    LimitedAttrTensorDictWithDefaults.valid_attr_keys = ("test",)
-    LimitedAttrTensorDictWithDefaults.valid_attr_sizes = ((3, 4),)
+    LimitedAttrTensorDictWithDefaults.default_attr_sizes = {"test": (3, 4)}
 
     tensor = torch.rand(2, 3, 4)
 
@@ -94,43 +94,48 @@ def test_limited_attr_tensor_dict_with_defaults():
 def test_pose():
     # Test check_model_type with valid model type
     for model_type in ["smpl", "smplh", "smplx", "flame", "mano", None, "SmPl"]:
-        Pose.check_model_type(model_type)
+        Poses.check_model_type(model_type)
 
     # Test check_model_type with invalid model type
-    check_invalid_keys(Pose, "invalid")
+    check_invalid_keys(Poses, "invalid")
 
 
 def test_smpl_pose():
     # Test to_tensor method
-    Pose.valid_attr_keys = ("body", "hand")
-    smpl_pose = Pose()
+    Poses.default_attr_sizes = {"body": None, "l_hand": None, "r_hand": None}
+    smpl_pose = Poses()
     smpl_pose["body"] = torch.rand(2, 63)
-    smpl_pose["hand"] = torch.rand(2, 6)
+    smpl_pose["l_hand"] = torch.rand(2, 3)
+    smpl_pose["r_hand"] = torch.rand(2, 3)
     tensor_out = smpl_pose.to_tensor()
     assert tensor_out.shape == (2, 69)
     assert (smpl_pose.body == tensor_out[:, :63]).all()
-    assert (smpl_pose.hand == tensor_out[:, 63:]).all()
+    assert (smpl_pose.l_hand == tensor_out[:, 63:66]).all()
+    assert (smpl_pose.r_hand == tensor_out[:, 66:]).all()
 
     # Test with valid attributes
     tensor = torch.rand(2, 69)
-    smpl_pose = SMPLPose()
+    smpl_pose = SMPLPoses()
     smpl_pose.from_tensor(tensor)
     assert smpl_pose.body.shape == (2, 63)
-    assert smpl_pose.hand.shape == (2, 6)
+    assert smpl_pose.l_hand.shape == (2, 3)
+    assert smpl_pose.r_hand.shape == (2, 3)
     assert smpl_pose.model_type == "smpl"
     assert smpl_pose.to_tensor().shape == (2, 69)
     assert (smpl_pose.to_tensor() == tensor).all()
-    smpl_pose = SMPLPose(dict(zip(smpl_pose.valid_attr_keys, tensor.split([63, 6], dim=-1))))
+    smpl_pose = SMPLPoses(dict(zip(smpl_pose.default_attr_sizes, tensor.split([63, 3, 3], dim=-1))))
     assert (smpl_pose.to_tensor() == tensor).all()
     assert (smpl_pose.body == tensor[:, :63]).all()
-    assert (smpl_pose.hand == tensor[:, 63:]).all()
+    assert (smpl_pose.l_hand == tensor[:, 63:66]).all()
+    assert (smpl_pose.r_hand == tensor[:, 66:]).all()
 
     # Test from_tensor with smplh
     tensor = torch.rand(2, 153)
-    smpl_pose = SMPLPose()
+    smpl_pose = SMPLPoses()
     smpl_pose.from_tensor(tensor, model_type="smplh")
     assert smpl_pose.body.shape == (2, 63)
-    assert smpl_pose.hand.shape == (2, 6)
+    assert smpl_pose.l_hand.shape == (2, 3)
+    assert smpl_pose.r_hand.shape == (2, 3)
     assert smpl_pose.to_tensor().shape == (2, 69)
     assert (smpl_pose.to_tensor()[:, :66] == tensor[:, :66]).all()
     assert (smpl_pose.to_tensor()[:, 66:] == tensor[:, 108:111]).all()
@@ -142,7 +147,7 @@ def test_smpl_pose():
 def test_mano_pose():
     # Test with valid attributes
     tensor = torch.rand(2, 45)
-    mano_pose = MANOPose()
+    mano_pose = MANOPoses()
     mano_pose.from_tensor(tensor)
     assert mano_pose.hand.shape == (2, 45)
     assert mano_pose.model_type == "mano"
@@ -150,14 +155,14 @@ def test_mano_pose():
 
     # Test from_tensor with smplh-l
     tensor = torch.rand(2, 153)
-    mano_pose = MANOPose()
+    mano_pose = MANOPoses()
     mano_pose.from_tensor(tensor, model_type="smplh-l")
     assert mano_pose.hand.shape == (2, 45)
     assert (mano_pose.to_tensor() == tensor[:, 63:108]).all()
 
     # Test from_tensor with smplh-r
     tensor = torch.rand(2, 153)
-    mano_pose = MANOPose()
+    mano_pose = MANOPoses()
     mano_pose.from_tensor(tensor, model_type="smplh-r")
     assert mano_pose.hand.shape == (2, 45)
     assert (mano_pose.to_tensor() == tensor[:, 108:]).all()
@@ -169,28 +174,31 @@ def test_mano_pose():
 def test_smplh_pose():
     # Test with valid attributes
     tensor = torch.rand(2, 153)
-    smplh_pose = SMPLHPose()
+    smplh_pose = SMPLHPoses()
     smplh_pose.from_tensor(tensor)
     assert smplh_pose.body.shape == (2, 63)
-    assert smplh_pose.hand.shape == (2, 90)
+    assert smplh_pose.l_hand.shape == (2, 45)
+    assert smplh_pose.r_hand.shape == (2, 45)
     assert smplh_pose.model_type == "smplh"
     assert (smplh_pose.to_tensor() == tensor).all()
     assert (smplh_pose.body == tensor[:, :63]).all()
-    assert (smplh_pose.hand == tensor[:, 63:]).all()
+    assert (smplh_pose.l_hand == tensor[:, 63:108]).all()
+    assert (smplh_pose.r_hand == tensor[:, 108:]).all()
 
     # Test from_tensor with smpl
     tensor = torch.rand(2, 69)
-    smplh_pose = SMPLHPose()
+    smplh_pose = SMPLHPoses()
     smplh_pose.from_tensor(tensor, model_type="smpl")
     assert smplh_pose.body.shape == (2, 63)
-    assert smplh_pose.hand.shape == (2, 90)
+    assert smplh_pose.l_hand.shape == (2, 45)
+    assert smplh_pose.r_hand.shape == (2, 45)
     assert (smplh_pose.body == tensor[:, :63]).all()
-    assert (smplh_pose.hand[:, :3] == tensor[:, 63:66]).all()
-    assert (smplh_pose.hand[:, 45:48] == tensor[:, 66:]).all()
+    assert (smplh_pose.l_hand[:, :3] == tensor[:, 63:66]).all()
+    assert (smplh_pose.r_hand[:, :3] == tensor[:, 66:]).all()
 
     # # Test from_tensor with mano
     # tensor = torch.rand(2, 45)
-    # smplh_pose = SMPLHPose()
+    # smplh_pose = SMPLHPoses()
     # smplh_pose.from_tensor(tensor, model_type="mano")
     # assert smplh_pose.hand.shape == (2, 90)
 
@@ -201,7 +209,7 @@ def test_smplh_pose():
 def test_flame_pose():
     # Test with valid attributes
     tensor = torch.rand(2, 12)
-    flame_pose = FLAMEPose()
+    flame_pose = FLAMEPoses()
     flame_pose.from_tensor(tensor)
     assert flame_pose.body.shape == (2, 3)
     assert flame_pose.jaw.shape == (2, 3)
@@ -214,7 +222,7 @@ def test_flame_pose():
 
     # Test from_tensor with smplx
     tensor = torch.rand(2, 162)
-    flame_pose = FLAMEPose()
+    flame_pose = FLAMEPoses()
     flame_pose.from_tensor(tensor, model_type="smplx")
     assert flame_pose.body.shape == (2, 3)
     assert flame_pose.jaw.shape == (2, 3)
@@ -230,22 +238,24 @@ def test_flame_pose():
 def test_smplx_pose():
     # Test with valid attributes
     tensor = torch.rand(2, 162)
-    smplx_pose = SMPLXPose()
+    smplx_pose = SMPLXPoses()
     smplx_pose.from_tensor(tensor)
     assert smplx_pose.body.shape == (2, 63)
     assert smplx_pose.jaw.shape == (2, 3)
     assert smplx_pose.eyes.shape == (2, 6)
-    assert smplx_pose.hand.shape == (2, 90)
+    assert smplx_pose.l_hand.shape == (2, 45)
+    assert smplx_pose.r_hand.shape == (2, 45)
     assert smplx_pose.model_type == "smplx"
     assert (smplx_pose.to_tensor() == tensor).all()
     assert (smplx_pose.body == tensor[:, :63]).all()
     assert (smplx_pose.jaw == tensor[:, 63:66]).all()
     assert (smplx_pose.eyes == tensor[:, 66:72]).all()
-    assert (smplx_pose.hand == tensor[:, 72:]).all()
+    assert (smplx_pose.l_hand == tensor[:, 72:117]).all()
+    assert (smplx_pose.r_hand == tensor[:, 117:]).all()
 
     # Test from_tensor with flame
     tensor = torch.rand(2, 12)
-    smplx_pose = SMPLXPose()
+    smplx_pose = SMPLXPoses()
     smplx_pose.from_tensor(tensor, model_type="flame")
     assert smplx_pose.jaw.shape == (2, 3)
     assert smplx_pose.eyes.shape == (2, 6)
@@ -265,7 +275,7 @@ def test_shape_components():
     assert shape_components.to_tensor().shape == (2, 10)
     assert (shape_components.to_tensor() == shape_components["betas"]).all()
     assert (shape_components.betas == shape_components["betas"]).all()
-    shape_components.valid_attr_sizes = (10,)
+    shape_components.default_attr_sizes["betas"] = 10
     shape_components.from_tensor(tensor)
     assert (shape_components.to_tensor() == tensor).all()
     check_invalid_keys(shape_components, ["expression", "dmpls"])
@@ -277,7 +287,8 @@ def test_shape_components():
     assert (shape_components.to_tensor() == tensor).all()
     assert (shape_components.betas == shape_components["betas"]).all()
     assert (shape_components.expression == shape_components["expression"]).all()
-    shape_components.valid_attr_sizes = (10, 5)
+    shape_components.default_attr_sizes["betas"] = 10
+    shape_components.default_attr_sizes["expression"] = 5
     shape_components.from_tensor(tensor)
     assert (shape_components.to_tensor() == tensor).all()
     check_invalid_keys(shape_components, "dmpls")
@@ -289,7 +300,8 @@ def test_shape_components():
     assert (shape_components.to_tensor() == tensor).all()
     assert (shape_components.betas == shape_components["betas"]).all()
     assert (shape_components.dmpls == shape_components["dmpls"]).all()
-    shape_components.valid_attr_sizes = (10, 20)
+    shape_components.default_attr_sizes["betas"] = 10
+    shape_components.default_attr_sizes["dmpls"] = 20
     shape_components.from_tensor(tensor)
     assert (shape_components.to_tensor() == tensor).all()
     check_invalid_keys(shape_components, "expression")
@@ -304,7 +316,9 @@ def test_shape_components():
     assert (shape_components.betas == shape_components["betas"]).all()
     assert (shape_components.expression == shape_components["expression"]).all()
     assert (shape_components.dmpls == shape_components["dmpls"]).all()
-    shape_components.valid_attr_sizes = (10, 5, 20)
+    shape_components.default_attr_sizes["betas"] = 10
+    shape_components.default_attr_sizes["expression"] = 5
+    shape_components.default_attr_sizes["dmpls"] = 20
     shape_components.from_tensor(tensor)
     assert (shape_components.to_tensor() == tensor).all()
 

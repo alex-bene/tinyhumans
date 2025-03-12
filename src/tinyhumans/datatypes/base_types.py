@@ -7,7 +7,7 @@ classes like AutoTensorDict and LimitedAttrTensorDictWithDefaults.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 from tensordict.tensordict import TensorDict
@@ -95,8 +95,7 @@ class LimitedAttrTensorDictWithDefaults(AutoTensorDict):
 
     """
 
-    valid_attr_keys: tuple[str, ...] = ()  # SHOULD BE IN ORDER FOR CONCATENATION
-    valid_attr_sizes: tuple[tuple[int, ...]] = ()  # SHOULD BE IN ORDER OF KEYS
+    default_attr_sizes: ClassVar[dict[tuple[int, ...] | int]] = {}
 
     def __init__(
         self,
@@ -149,13 +148,12 @@ class LimitedAttrTensorDictWithDefaults(AutoTensorDict):
             ValueError: If valid_attr_sizes is not properly configured.
 
         """
-        if key in self.valid_attr_keys and self.get(key, default=None) is None:
+        if key in self.default_attr_sizes and self.get(key, None) is None:
             # Make a (batch_size, *attr_size) tensor of zeros using memory for just one element
-            if not self.valid_attr_sizes:
-                msg = "valid_attr_sizes tuple must be set with sized for each of the valid_attr_keys: "
-                msg += f"{self.valid_attr_keys}."
+            attr_size = self.default_attr_sizes.get(key, None)
+            if attr_size is None:
+                msg = f"Attribute {key} not set and not found in `default_attr_sizes` to auto-initialize."
                 raise ValueError(msg)
-            attr_size = self.valid_attr_sizes[self.valid_attr_keys.index(key)]
             if isinstance(attr_size, int):
                 attr_size = (attr_size,)
             if self.batch_size is None or len(self.batch_size) == 0:
@@ -193,19 +191,19 @@ class LimitedAttrTensorDictWithDefaults(AutoTensorDict):
 
         """
         msg = None
-        if isinstance(keys, str) and (keys.lower() not in cls.valid_attr_keys):
+        if isinstance(keys, str) and (keys.lower() not in cls.default_attr_sizes):
             msg = f"Key {keys} is not a valid key for {cls.__name__}"
         elif (
             not isinstance(keys, str)
             and isinstance(keys, Sequence)
-            and not all(key.lower() in cls.valid_attr_keys for key in keys)
+            and not all(key.lower() in cls.default_attr_sizes for key in keys)
         ):
             msg = f"Sequence {keys} do not contain valid keys for {cls.__name__}"
 
         if not msg:
             return
 
-        msg += f"Valid keys for {cls.__name__} are {cls.valid_attr_keys!r}."
+        msg += f"Valid keys for {cls.__name__} are {cls.default_attr_sizes!r}."
         raise KeyError(msg)
 
     def __getattr__(self, name: str) -> Any:
@@ -221,7 +219,7 @@ class LimitedAttrTensorDictWithDefaults(AutoTensorDict):
             Any: Attribute value or TensorDict item.
 
         """
-        if name in self.valid_attr_keys:
+        if name in self.default_attr_sizes:
             return self[name]
         # I would expect this to be super().__getattr__(name) there is not __getattr__ in super().
         # Shouldn't this create an infinite loop? weird...
@@ -238,7 +236,7 @@ class LimitedAttrTensorDictWithDefaults(AutoTensorDict):
             value (Any): Attribute value or TensorDict item value.
 
         """
-        if name in self.valid_attr_keys:
+        if name in self.default_attr_sizes:
             self[name] = value
             return
         super().__setattr__(name, value)
