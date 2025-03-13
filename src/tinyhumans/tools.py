@@ -23,10 +23,9 @@ if TYPE_CHECKING:
     from plotly.graph_objs import Figure
     from pytorch3d.renderer.cameras import CamerasBase
     from pytorch3d.structures import Meshes
-    from rich.logging import RichHandler
 
 
-def get_level_text(self: RichHandler, record: LogRecord) -> Text:  # noqa: ARG001
+def get_level_text(record: LogRecord) -> Text:
     """Get the formatted level text for a log record.
 
     Args:
@@ -38,11 +37,7 @@ def get_level_text(self: RichHandler, record: LogRecord) -> Text:  # noqa: ARG00
 
     """
     level_name = record.levelname.lower()
-    return (
-        Text.styled("[", "")
-        + Text.styled(level_name.ljust(8), f"logging.level.{level_name.lower()}")
-        + Text.styled("]", "")
-    )
+    return Text.styled("[" + level_name.ljust(8) + "]", f"logging.level.{level_name}")
 
 
 def get_logger(name: str, level: str = "NOTSET") -> Logger:
@@ -65,9 +60,11 @@ def get_logger(name: str, level: str = "NOTSET") -> Logger:
     from rich.theme import Theme
 
     console = Console(theme=Theme({"log.time": "black", "log.path": Style(color="black", dim=True)}))
-    handler = RichHandler(rich_tracebacks=True, tracebacks_show_locals=True, tracebacks_width=100, console=console)
-    RichHandler.get_level_text = get_level_text
-    handler.setFormatter(logging.Formatter("%(message)s", datefmt="%X"))
+    handler = RichHandler(
+        rich_tracebacks=True, tracebacks_show_locals=True, tracebacks_width=100, console=console, log_time_format="[%X]"
+    )
+    handler.get_level_text = get_level_text
+    handler.setFormatter(logging.Formatter("[%(name)s:%(funcName)s] %(message)s", datefmt="%X"))
 
     logger = logging.getLogger(name)
     logger.setLevel(level.upper())
