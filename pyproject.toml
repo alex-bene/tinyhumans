@@ -12,6 +12,7 @@ dependencies = [
     "trimesh>=4.5.3",
     "pyrender>=0.1.45",
     "rich>=13.9.4",
+    "setuptools>=75.7.0",
 ]
 
 [tool.uv.sources]
