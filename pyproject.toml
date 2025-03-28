@@ -15,9 +15,6 @@ dependencies = [
     "setuptools>=75.7.0",
 ]
 
-[tool.uv.sources]
-pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d", rev = "7a3c0cbc9d7b0e70ef39b7f3c35e9ce2b7376f32"}
-
 [tool.uv]
 no-build-isolation-package = ["pytorch3d"]
 
