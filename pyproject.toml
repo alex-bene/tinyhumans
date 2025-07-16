@@ -6,25 +6,30 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "torch>=2.6.0",
-    "pytorch3d>=0.7.8",
-    "plotly>=5.24.1", # pytorch3d dependency for mesh viewer
+    "plotly>=5.24.1",            # pytorch3d dependency for mesh viewer
     "tensordict>=0.7.2",
     "trimesh>=4.5.3",
     "pyrender>=0.1.45",
     "rich>=13.9.4",
     "setuptools>=75.7.0",
+    "typing-extensions>=4.12.2",
+    "gdown>=5.2.0",
 ]
+
+[project.optional-dependencies]
+build = ["setuptools"]
+run = ["pytorch3d==0.7.8"]
 
 [tool.uv]
 no-build-isolation-package = ["pytorch3d"]
 
+[tool.uv.sources]
+pytorch3d = [{ git = "https://github.com/facebookresearch/pytorch3d" }]
+
+
 [dependency-groups]
-demo = [
-    "notebook>=7.3.2",
-]
-dev = [
-    "pytest>=8.3.4",
-]
+demo = ["notebook>=7.3.2"]
+dev = ["pytest>=8.3.4"]
 
 [build-system]
 requires = ["hatchling"]
