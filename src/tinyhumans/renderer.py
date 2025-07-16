@@ -16,7 +16,8 @@ from pyrender import Viewer
 from pyrender.constants import RenderFlags
 from trimesh import Trimesh, transformations
 
-from tinyhumans.tools import get_jet_colormap, get_logger, img_from_array
+from tinyhumans.tools import get_logger, img_from_array
+from tinyhumans.visualize import get_jet_colormap
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -364,7 +365,9 @@ class PyRenderer:
                     flags |= flag
 
             if render_params.get("segmentation", False):
-                seg_node_map = dict(zip(self.scene.mesh_nodes, get_jet_colormap(len(meshes), dtype=np.uint8)))
+                seg_node_map = dict(
+                    zip(self.scene.mesh_nodes, get_jet_colormap(len(meshes), dtype=np.uint8), strict=False)
+                )
 
         color, depth = self.renderer.render(self.scene, flags=flags, seg_node_map=seg_node_map)
 
