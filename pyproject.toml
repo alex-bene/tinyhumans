@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "torch>=2.6.0",
-    "plotly>=5.24.1",            # pytorch3d dependency for mesh viewer
+    "plotly>=5.24.1", # pytorch3d dependency for mesh viewer
     "tensordict>=0.7.2",
     "trimesh>=4.5.3",
     "pyrender>=0.1.45",
@@ -14,6 +14,9 @@ dependencies = [
     "setuptools>=75.7.0",
     "typing-extensions>=4.12.2",
     "gdown>=5.2.0",
+    "tyro>=0.9.26",
+    "viser>=1.0.0",
+    "smplcodec>=2.0.2",
 ]
 
 [project.optional-dependencies]
