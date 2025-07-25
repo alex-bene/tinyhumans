@@ -286,8 +286,10 @@ class ClientSession:
         # Update human meshes
         for i, smpl_output in enumerate(self.smpl_outputs):
             name = f"/human_{i}"
-            self.frame_nodes[name].vertices = smpl_output["verts"][frame_idx]
-            self.frame_nodes[name].visible = frame_idx < smpl_output["verts"].shape[0]
+            visible = frame_idx < smpl_output["verts"].shape[0]
+            self.frame_nodes[name].visible = visible
+            if visible:
+                self.frame_nodes[name].vertices = smpl_output["verts"][frame_idx]
 
     def _start_animation_loop(self) -> None:
         """Start the main animation loop for this client."""
