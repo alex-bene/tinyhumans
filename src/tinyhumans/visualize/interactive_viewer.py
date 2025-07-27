@@ -378,7 +378,7 @@ class ClientSession:
         if self.scene_data.camera_intrinsics:
             intrinsics = self.scene_data.camera_intrinsics
             self.scene_camera = self.client.scene.add_camera_frustum(
-                name="/camera", fov=intrinsics.yfov, aspect=intrinsics.aspect_ratio, scale=0.15, color=(65, 120, 100)
+                name="/camera", fov=intrinsics.yfov, aspect=intrinsics.aspect_ratio, scale=0.1, color=(65, 120, 100)
             )
 
         # Add video frames
@@ -421,7 +421,7 @@ class ClientSession:
             position = camera.position + z_axis_world * distance
         else:
             video_scale = self.gui_elements["video_scale"].value
-            distance = 0.15 * 2.5  # Scale of the frustum * a factor
+            distance = 0.1 * 2.5  # Scale of the frustum * a factor
             height = 2 * distance * np.tan(camera.fov / 2) * video_scale
 
             position = camera.position - forward_dir * distance
