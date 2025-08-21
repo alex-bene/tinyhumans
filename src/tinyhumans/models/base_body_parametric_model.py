@@ -1,6 +1,6 @@
 """Base parametric model for human bodies.
 
-This module defines the BaseParametricModel class, which serves as a base class for parametric 3D human body
+This module defines the BodyBaseParametricModel class, which serves as a base class for parametric 3D human body
 models. It provides common functionalities for loading model parameters, managing shape and pose components, and
 performing linear blend skinning to generate meshes.
 """
@@ -15,21 +15,12 @@ import torch.nn.functional as F
 from pytorch3d.transforms import axis_angle_to_matrix
 from torch import Tensor, nn
 
-from tinyhumans.datatypes import (
-    FLAMEPoses,
-    MANOPoses,
-    ParametricModelOutput,
-    Poses,
-    ShapeComponents,
-    SMPLHPoses,
-    SMPLPoses,
-    SMPLXPoses,
-)
+from tinyhumans.datatypes import BodyParametricModelOutput, SMPLData
 from tinyhumans.models.base_model import BaseModel
-from tinyhumans.tools import apply_rigid_transform
+from tinyhumans.tools import apply_rigid_transform, freeze_model
 
 
-class BaseParametricModel(BaseModel):
+class BodyBaseParametricModel(BaseModel):
     """Base class for parametric 3D human body models.
 
     This class provides common functionalities for loading model parameters, managing shape and pose components, and
@@ -65,7 +56,7 @@ class BaseParametricModel(BaseModel):
         gender: str = "neutral",
         dtype: torch.dtype = torch.float32,
     ) -> None:
-        """Initialize BaseParametricModel.
+        """Initialize BodyBaseParametricModel.
 
         Args:
             body_type (str): Type of the body model (e.g., "smpl", "smplh", "smplx").
@@ -82,8 +73,8 @@ class BaseParametricModel(BaseModel):
             NotImplementedError: If the class is instantiated directly.
 
         """
-        if self.__class__ == BaseParametricModel:
-            msg = "`BaseParametricModel` should only be instantiated through a subclass"
+        if self.__class__ == BodyBaseParametricModel:
+            msg = "`BodyBaseParametricModel` should only be instantiated through a subclass"
             raise NotImplementedError(msg)
 
         super().__init__()
@@ -96,17 +87,11 @@ class BaseParametricModel(BaseModel):
         self.root_orientation_size = 3
 
         # Check body type is valid
-        Poses.check_model_type(body_type)
+        if body_type.lower() not in ("smpl", "smplh", "smplx", "flame", "mano"):
+            msg = f"{body_type} is not a valid model type."
+            msg += f"Valid types are: {', '.join([repr(m) for m in ('smpl', 'smplh', 'smplx', 'flame', 'mano')])}."
+            raise ValueError(msg)
         self.body_type = body_type
-
-        # Set pose class to use
-        self._pose_class = {
-            "smpl": SMPLPoses,
-            "smplh": SMPLHPoses,
-            "smplx": SMPLXPoses,
-            "flame": FLAMEPoses,
-            "mano": MANOPoses,
-        }.get(self.body_type, None)
 
         # Parameters of body in rest pose
         ## indices of parents for each joints (num_joints)
@@ -166,7 +151,7 @@ class BaseParametricModel(BaseModel):
         device_map: str | torch.device | None = "auto",
         torch_dtype: torch.dtype = torch.float32,
         **kwargs,
-    ) -> BaseParametricModel:
+    ) -> BodyBaseParametricModel:
         """Load a pre-trained model.
 
         Args:
@@ -177,14 +162,20 @@ class BaseParametricModel(BaseModel):
             **kwargs: Additional keyword arguments passed to the model constructor.
 
         Returns:
-            BaseParametricModel: A pre-trained BaseParametricModel instance.
+            BodyBaseParametricModel: A pre-trained BodyBaseParametricModel instance.
 
         """
+        if cls == BodyBaseParametricModel:
+            msg = "`BodyBaseParametricModel` should only be instantiated through a subclass"
+            raise NotImplementedError(msg)
+
+        # Check pretrained model path
         pretrained_model_path: Path = Path(pretrained_model_path)
         if not pretrained_model_path.exists():
             msg = f"Could not find the pretrained model path: {pretrained_model_path}"
             raise ValueError(msg)
 
+        # Infer device type
         if device_map == "auto":
             device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         elif isinstance(device_map, str):
@@ -208,12 +199,8 @@ class BaseParametricModel(BaseModel):
         )
         num_betas = shape_blend_components.shape[-1]
 
-        if cls == BaseParametricModel:
-            msg = "`BaseParametricModel` should only be instantiated through a subclass"
-            raise NotImplementedError(msg)
-
         # Create model
-        obj: BaseParametricModel = cls(
+        obj: BodyBaseParametricModel = cls(
             body_type=body_type,
             num_betas=num_betas,
             num_joints=shaped_verts_to_joints_regressor.shape[0],
@@ -229,7 +216,8 @@ class BaseParametricModel(BaseModel):
         obj.shape_blend_components = nn.Parameter(shape_blend_components).to(device, torch_dtype)
         obj.pose_blend_components = nn.Parameter(pose_blend_components).to(device, torch_dtype)
 
-        # Set evaluation mode
+        # Freeze and set evaluation mode
+        freeze_model(obj)
         obj.eval()
 
         return obj.to(device, torch_dtype)
@@ -281,26 +269,17 @@ class BaseParametricModel(BaseModel):
         """torch.dtype: Data type of the model parameters."""
         return self.blending_weights.dtype
 
-    def get_shape_components(
-        self, shape_components: ShapeComponents | dict | Tensor | None = None, device: torch.device | str | None = None
-    ) -> ShapeComponents:
-        """Get ShapeComponents object from input.
+    def get_shape_tensor(self, smpl_data: SMPLData) -> Tensor:
+        """Get shape tensor from a SMPLData object.
 
         Args:
-            shape_components (ShapeComponents | dict | torch.Tensor | None, optional): Input shape components.
-                Defaults to None.
-            device (torch.device | str | None, optional): Device to put the ShapeComponents object on.
-                Defaults to None (uses model device).
+            smpl_data (SMPLData): SMPL data object (poses, shape parameters).
 
         Returns:
-            ShapeComponents: ShapeComponents object.
+            Tensor: Tensor of concatenated shape parameters.
 
         """
-        out = ShapeComponents(
-            shape_components, use_expression=False, use_dmpl=False, device=device if device else self.device
-        )
-        out.valid_attr_sizes = (self.shape_coeff_size,)
-        return out
+        return smpl_data.get_shape_tensor(shape_coeffs_size=10, dmpl_coeffs_size=0, expression_coeffs_size=0)
 
     def infer_batch_size(self, kwargs: dict) -> int:
         """Infer batch size from input keyword arguments.
@@ -322,25 +301,13 @@ class BaseParametricModel(BaseModel):
 
         return bs
 
-    def forward(
-        self,
-        poses: Poses | dict | Tensor | None = None,
-        shape_components: ShapeComponents | dict | Tensor | None = None,
-        *,
-        root_positions: Tensor | None = None,
-        root_orientations: Tensor | None = None,
-        poses_in_axis_angles: bool = True,
-    ) -> ParametricModelOutput:
+    def forward(self, smpl_data: SMPLData | dict, *, poses_in_axis_angles: bool = True) -> BodyParametricModelOutput:
         """Forward pass of the base parametric model.
 
         Generates body meshes from pose and shape parameters using linear blend skinning.
 
         Args:
-            poses (Poses | dict | torch.Tensor | None, optional): Poses parameters. Defaults to None.
-            shape_components (ShapeComponents | dict | torch.Tensor | None, optional): Shape parameters.
-                Defaults to None.
-            root_positions (torch.Tensor | None, optional): Root positions of the bodies. Defaults to None.
-            root_orientations (torch.Tensor | None, optional): Root orientations of the bodies. Defaults to None.
+            smpl_data (SMPLData | dict | None, optional): SMPL data object (poses, shape parameters). Defaults to None.
             poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations (need to
                 be transformed to rotation matrices in this case). Defaults to True.
 
@@ -349,101 +316,90 @@ class BaseParametricModel(BaseModel):
                 root orientation, and vertices template.
 
         """
-        # Make sure the inputs are of the correct type
-        poses = self._pose_class(poses)
-        shape_components = self.get_shape_components(shape_components, device=self.device)
+        # Make sure the input is of the correct type
+        if isinstance(smpl_data, dict):
+            smpl_data = SMPLData(**smpl_data)
+        if not isinstance(smpl_data, SMPLData):
+            msg = f"Expected SMPLData or dict, got {type(smpl_data)}"
+            raise TypeError(msg)
 
-        # Infer batch size
-        batch_size = self.infer_batch_size(poses.to_dict() | shape_components.to_dict() | locals())
-
-        # Fill in default values if None
-        root_positions = self.root_position if root_positions is None else root_positions
-        root_positions = root_positions.expand(batch_size, -1)
-        root_orientation = self.root_orientation if root_orientations is None else root_orientations
-        root_orientation = root_orientation.expand(batch_size, -1)
-
-        # Get pose components
-        pose_tensor = torch.cat([root_orientation, poses.to_tensor().expand(batch_size, -1)], dim=-1)
+        batch_size = smpl_data.batch_size
 
         # Linear blend skinning
         verts, joints = self.linear_blend_skinning(
-            betas=shape_components.to_tensor().expand(batch_size, -1),
-            pose=pose_tensor,
-            vertices_template=self.vertices_template.expand(batch_size, -1, -1),
+            betas=self.get_shape_tensor(smpl_data).expand(*batch_size, -1),
+            pose=smpl_data.full_pose,
             poses_in_axis_angles=poses_in_axis_angles,
         )
 
-        return ParametricModelOutput(
-            verts=verts + root_positions.unsqueeze(dim=1),
-            joints=joints + root_positions.unsqueeze(dim=1).expand(batch_size, -1, -1),
-            poses=poses,
-            shape_components=shape_components,
-            root_positions=root_positions,
-            root_orientations=root_orientation,
-            vertices_template=self.vertices_template,
-            # bStree_table = self.kintree_table
-        )
+        # Fill in default values if None
+        root_position = smpl_data.body_translation
+        root_position = self.root_position if root_position is None else root_position
+        root_position = root_position.expand(*batch_size, -1).unsqueeze(dim=-2)
+
+        return BodyParametricModelOutput(verts=verts + root_position, joints=joints + root_position)
 
     def linear_blend_skinning(
-        self, betas: Tensor, pose: Tensor, vertices_template: Tensor, poses_in_axis_angles: bool = True
+        self, betas: Tensor, pose: Tensor, poses_in_axis_angles: bool = True
     ) -> tuple[Tensor, Tensor]:
         """Perform Linear Blend Skinning with the given shape and pose parameters.
 
+        Expects tensors with shapes (Batch Count (B), Frame Count (T), Human Count (H), ...).
+
         Args:
-            betas (torch.Tensor): The tensor of shape parameters with shape (batch_size, num_betas).
-            pose (torch.Tensor): The pose parameters in axis-angle format with shape (batch_size, (num_joints + 1) * 3)
-                if poses_in_axis_angles is True, otherwise (batch_size, (num_joints + 1) * 9).
-            vertices_template (torch.Tensor): The template (mean) mesh that will be deformed with shape
-                (batch_size, num_vertices, 3).
+            betas (torch.Tensor): The tensor of shape parameters with shape (B, T, H, num_betas).
+            pose (torch.Tensor): The pose parameters in axis-angle format with shape (B, T, H, (num_joints + 1), 3) if
+                poses_in_axis_angles is True, otherwise (B, T, H, (num_joints + 1), 9).
             poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations (need to
                 be transformed to rotation matrices in this case). Defaults to True.
 
         Returns:
             tuple[torch.Tensor, torch.Tensor]:
                 - The vertices of the mesh after applying the shape and pose displacements with shape
-                  (batch_size, num_vertices, 3).
-                - The joints of the model with shape (batch_size, num_joints, 3).
+                  (B, T, H, num_vertices, 3).
+                - The joints of the model with shape (B, T, H, num_joints, 3).
 
         """
         # 0. Infer parameters
-        batch_size = max(betas.shape[0], pose.shape[0])
-        device, dtype = betas.device, betas.dtype
+        batch_size = pose.shape[:-2]
+        device, dtype = pose.device, pose.dtype
         ## Transform axis-angle rotations into rotation matrices if needed
-        rot_mats = axis_angle_to_matrix(pose.view(-1, 3)).view([batch_size, -1, 3, 3]) if poses_in_axis_angles else pose
+        rot_mats = axis_angle_to_matrix(pose.view(-1, 3)) if poses_in_axis_angles else pose
         ## Set the correct rotation matrices shape
-        rot_mats = rot_mats.view(batch_size, -1, 3, 3)
+        rot_mats = rot_mats.view(*batch_size, -1, 3, 3)
 
         # 1. Add the per vertex displacement due to the shape
         ## Same as batched matrix multiplication with implicit batch size expansion
-        ## e.g.: torch.bmm(betas, self.shape_directions.expand(betas.shape[0], -1, -1))
-        ## (B x num_betas) x (V x 3 x num_betas) -> (B x V x 3)
-        verts_shaped = vertices_template + torch.einsum("bi,jki->bjk", betas, self.shape_blend_components)
+        ## e.g.: torch.bmm(betas, self.shape_directions.expand(*batch_size, -1, -1))
+        ## (B x T x H x num_betas) x (V x 3 x num_betas) -> (B x T x H x V x 3)
+        vertices_template = self.vertices_template.expand(*batch_size, -1, -1)
+        verts_shaped = vertices_template + torch.einsum("bthi,jki->bthjk", betas, self.shape_blend_components)
 
         # 2. Add the per vertex displacement due to the pose
         ident = torch.eye(3, dtype=dtype, device=device)
-        ## Get the pose feature vector (relative rotation matrices for each joint (ignore global rotation) minus identity)
-        pose_feature = rot_mats[:, 1:, :, :] - ident
+        ## Get the pose feature vector (relative rotation matrices per joint (ignore global rotation) minus identity)
+        pose_feature = rot_mats[..., 1:, :, :] - ident
         ## Calculate the vertices offsets
-        ## (N x J x 3 x 3) x (J*3*3, V * 3) -> N x V x 3
-        pose_offsets = torch.matmul(pose_feature.view(batch_size, -1), self.pose_blend_components).view(
-            batch_size, -1, 3
+        ## (B x T x H x J x 3 x 3) x (J*3*3, V * 3) -> B x T x H x V x 3
+        pose_offsets = torch.matmul(pose_feature.view(*batch_size, -1), self.pose_blend_components).view(
+            *batch_size, -1, 3
         )
         ## Get the vertices considering the pose contributions
         verts_posed = verts_shaped + pose_offsets
 
         # 3. Get the joints locations
         ## Get the joints at rest (based on the shape)
-        ## (B x V x 3) x (J x V) -> B x J x 3
-        joints = torch.einsum("bij,ki->bkj", [verts_shaped, self.shaped_verts_to_joints_regressor])
+        ## (B x T x H x V x 3) x (J x V) -> B x T x H x J x 3
+        joints = torch.einsum("bthij,ki->bthkj", [verts_shaped, self.shaped_verts_to_joints_regressor])
         ## Get the global joint location based on the joint rotations (including global orientation)
         joints_posed, joint_transforms = apply_rigid_transform(rot_mats, joints, self.kinematic_tree_vector)
 
         # 5. Do skinning:
-        ## (B x (J + 1) x 4 x 4) x (V x (J + 1)) -> (B x V x 4 x 4)
-        skinning_transforms = torch.einsum("bjik,vj->bvik", [joint_transforms, self.blending_weights])
+        ## (B x T x H x (J + 1) x 4 x 4) x (V x (J + 1)) -> (B x T x H x V x 4 x 4)
+        skinning_transforms = torch.einsum("bthjik,vj->bthvik", [joint_transforms, self.blending_weights])
         ## Get the homogeneous coordinate representation of the vertices
         verts_posed = F.pad(verts_posed, (0, 1), mode="constant", value=1)
-        ## (B x V x 4 x 4) x (B x V x 3) -> (B x V x 3)
-        verts = torch.matmul(skinning_transforms, torch.unsqueeze(verts_posed, dim=-1))[:, :, :3, 0]
+        ## (B x T x H x V x 4 x 4) x (B x T x H x V x 3) -> (B x T x H x V x 3)
+        verts = torch.matmul(skinning_transforms, torch.unsqueeze(verts_posed, dim=-1))[..., :3, 0]
 
         return verts, joints_posed

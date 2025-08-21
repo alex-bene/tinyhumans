@@ -44,7 +44,7 @@ class Meshes(P3D_Meshes):
         """
         trimeshes = []
 
-        for idx, (verts, faces) in enumerate(zip(self.verts_list(), self.faces_list())):
+        for idx, (verts, faces) in enumerate(zip(self.verts_list(), self.faces_list(), strict=True)):
             textures = None if self.textures is None else self.textures[idx]
             verts_colors = face_colors = None
 

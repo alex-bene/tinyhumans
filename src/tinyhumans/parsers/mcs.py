@@ -3,51 +3,15 @@
 import base64
 import io
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, ClassVar
 
 import cv2
 import numpy as np
 import scipy.spatial.transform as sp_transform
+import torch
 from smplcodec import SMPLCodec
-
-
-@dataclass
-class CameraIntrinsics:
-    """A dataclass to hold camera intrinsic parameters."""
-
-    yfov: float
-    aspect_ratio: float
-    znear: float | None = None
-
-
-@dataclass
-class CameraData:
-    """A dataclass to hold camera animation data."""
-
-    times: np.ndarray
-    R_cw: np.ndarray  # (N, 3, 3) Camera-from-world rotation matrices
-    T_cw: np.ndarray  # (N, 3) Camera-from-world translation vectors
-
-
-@dataclass
-class SmplData:
-    """A dataclass to hold SMPL data for a single body."""
-
-    codec: SMPLCodec
-    frame_presence: list[bool]
-
-
-@dataclass
-class Scene4D:
-    """A dataclass to hold all data for a loaded .mcs scene."""
-
-    num_frames: int
-    smpl_data: list[SmplData] = field(default_factory=list)
-    camera_data: CameraData | None = None
-    camera_intrinsics: CameraIntrinsics | None = None
-    video_frames: list[np.ndarray] | None = None
 
 
 class McsParser:
@@ -101,24 +65,85 @@ class McsParser:
         data = np.frombuffer(buffer, dtype=component_type, count=count * num_components, offset=total_offset)
         return data.reshape(count, num_components) if num_components > 1 else data
 
-    def _load_smpl_data(self) -> list[SmplData]:
+    @staticmethod
+    def list_of_smpl_data_to_smpldata_dict_args(list_of_smpl_data: list[dict]) -> dict:
+        if not list_of_smpl_data:
+            return {}
+        keys = list_of_smpl_data[0].keys()
+        args_dict: dict[str, np.ndarray] = {}
+        for key in keys:
+            args_dict[key] = np.stack([smpl_data[key] for smpl_data in list_of_smpl_data])
+            if key != "shape_parameters" and args_dict[key].ndim >= 3:
+                args_dict[key] = args_dict[key].swapaxes(0, 1)
+            if all(v is None for v in args_dict[key]):
+                args_dict[key] = None
+
+        return args_dict
+
+    def _load_smpl_data(self) -> dict[str, np.ndarray]:
         """Load SMPL data from the glTF extensions.
 
         Returns:
-            A list of SmplData objects.
+            A dict of data to initialize a SMPLData object
 
         """
         smpl_data = []
+        frame_presence = []
         scene_desc = self.gltf["scenes"][0].get("extensions", {}).get("MC_scene_description", {})
         if "smpl_bodies" in scene_desc:
             for body_info in scene_desc["smpl_bodies"]:
                 buffer_view = self.gltf["bufferViews"][body_info["bufferView"]]
                 smpl_buffer_bytes = self.buffers[buffer_view["buffer"]]
-                codec = SMPLCodec.from_file(io.BytesIO(smpl_buffer_bytes))
-                smpl_data.append(SmplData(codec=codec, frame_presence=body_info["frame_presence"]))
-        return smpl_data
+                smpl_data.append(asdict(SMPLCodec.from_file(io.BytesIO(smpl_buffer_bytes))))
+                frame_presence.append(body_info["frame_presence"])
 
-    def _load_camera_data(self) -> CameraData | None:
+        if not smpl_data:
+            return {}
+        keys = smpl_data[0].keys()
+        smpl_data_dict: dict[str, np.ndarray] = {}
+        frame_presence = np.array(frame_presence)
+        max_frame_presence = frame_presence.max(0)[1].item()
+        for key in keys:
+            list_values = []
+            for idx_i, smpl_data_i in enumerate(smpl_data):
+                cur_v = smpl_data_i[key]
+                if isinstance(cur_v, np.ndarray) and cur_v.ndim >= 2:
+                    frame_presence_i = frame_presence[idx_i]
+                    cur_v = np.pad(
+                        cur_v,
+                        (
+                            (frame_presence_i[0].item(), max_frame_presence - frame_presence_i[1].item()),
+                            *[(0, 0)] * (cur_v.ndim - 1),
+                        ),
+                    )
+                list_values.append(cur_v)
+            smpl_data_dict[key] = np.stack(list_values)
+            if key != "shape_parameters" and smpl_data_dict[key].ndim >= 3:
+                smpl_data_dict[key] = smpl_data_dict[key].swapaxes(0, 1)
+            if all(v is None for v in smpl_data_dict[key]):
+                smpl_data_dict[key] = None
+
+        smpl_data_dict["frame_presence"] = np.stack(
+            [
+                [0] * frame_presence_i[0].item()
+                + [1] * (frame_presence_i[1].item() - frame_presence_i[0].item())
+                + [0] * (max_frame_presence - frame_presence_i[1].item())
+                for frame_presence_i in frame_presence
+            ]
+        ).swapaxes(0, 1)
+        smpl_data_dict.pop("frame_count", None)
+        if "codec_version" in smpl_data_dict:
+            smpl_data_dict["codec_version"] = smpl_data_dict["codec_version"][0].item()
+        if "smpl_version" in smpl_data_dict:
+            smpl_data_dict["smpl_version"] = smpl_data_dict["smpl_version"][0].item()
+        if "gender" in smpl_data_dict:
+            smpl_data_dict["gender"] = smpl_data_dict["gender"][0].item()
+        if "frame_rate" in smpl_data_dict:
+            smpl_data_dict["frame_rate"] = smpl_data_dict["frame_rate"][0].item()
+
+        return smpl_data_dict
+
+    def _load_camera_data(self) -> dict[str, torch.Tensor] | None:
         """Load camera animation data from the glTF animations."""
         if not self.gltf.get("animations"):
             return None
@@ -145,18 +170,20 @@ class McsParser:
         R_cw = sp_transform.Rotation.from_quat(rotations).as_matrix().transpose(0, 2, 1)
         T_cw = -np.einsum("nij,nj->ni", R_cw, translations)
 
-        return CameraData(times=times, R_cw=R_cw, T_cw=T_cw)
+        return {"times": torch.tensor(times), "R_cw": torch.tensor(R_cw), "T_cw": torch.tensor(T_cw)}
 
-    def _load_camera_intrinsics(self) -> CameraIntrinsics | None:
+    def _load_camera_intrinsics(self) -> dict[str, int | float] | None:
         """Load camera intrinsics from the glTF cameras."""
         if not self.gltf.get("cameras"):
             return None
         perspective = self.gltf["cameras"][0]["perspective"]
-        return CameraIntrinsics(
-            yfov=perspective["yfov"], aspect_ratio=perspective["aspectRatio"], znear=perspective.get("znear")
-        )
+        return {
+            "yfov": perspective["yfov"],
+            "aspect_ratio": perspective["aspectRatio"],
+            "znear": perspective.get("znear"),
+        }
 
-    def parse(self) -> Scene4D:
+    def parse(self) -> dict[str, list | dict | int | None]:
         """Load and parse the glTF file into a structured Scene4D object."""
         with self.gltf_path.open(encoding="utf-8") as f:
             self.gltf = json.load(f)
@@ -176,10 +203,10 @@ class McsParser:
                 video_frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             cap.release()
 
-        return Scene4D(
-            num_frames=scene_desc.get("num_frames", 0),
-            smpl_data=self._load_smpl_data(),
-            camera_data=self._load_camera_data(),
-            camera_intrinsics=self._load_camera_intrinsics(),
-            video_frames=video_frames,
-        )
+        return {
+            "num_frames": scene_desc.get("num_frames", 0),
+            "smpl_data": self._load_smpl_data(),
+            "camera_data": self._load_camera_data(),
+            "camera_intrinsics": self._load_camera_intrinsics(),
+            "video_frames": video_frames,
+        }

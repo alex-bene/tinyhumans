@@ -1,7 +1,7 @@
-"""Human body models based on BaseParametricModel.
+"""Human body models based on BodyBaseParametricModel.
 
 This module defines specific human body model classes such as SMPL, SMPLH, and SMPLX, which inherit from the
-BaseParametricModel class and provide model-specific initialization and shape component handling.
+BodyBaseParametricModel class and provide model-specific initialization and shape component handling.
 """
 
 from __future__ import annotations
@@ -12,17 +12,18 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from tinyhumans.datatypes import ShapeComponents
-from tinyhumans.models.base_parametric_model import BaseParametricModel
+from tinyhumans.models.base_body_parametric_model import BodyBaseParametricModel
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tinyhumans.datatypes.smpl_data import SMPLData
 
-class SMPL(BaseParametricModel):
+
+class SMPL(BodyBaseParametricModel):
     """SMPL body model class.
 
-    This class implements the SMPL body model, inheriting from BaseParametricModel. It initializes the SMPL model with
+    This class implements the SMPL body model, inheriting from BodyBaseParametricModel. It initializes the SMPL model with
     specific parameters and configurations, including handling of DMPL shape components.
 
     Attributes:
@@ -124,37 +125,26 @@ class SMPL(BaseParametricModel):
 
         return shape_blend_components
 
-    def get_shape_components(
-        self,
-        shape_components: ShapeComponents | dict | torch.Tensor | None = None,
-        device: torch.device | str | None = None,
-    ) -> ShapeComponents:
-        """Get ShapeComponents object for SMPL model.
-
-        Overrides the base class method to handle DMPL shape components.
+    def get_shape_tensor(self, smpl_data: SMPLData) -> Tensor:
+        """Get shape tensor from a SMPLData object.
 
         Args:
-            shape_components (ShapeComponents | dict | torch.Tensor | None, optional): Input shape components.
-                Defaults to None.
-            device (torch.device | str | None, optional): Device to put the ShapeComponents object on.
-                Defaults to None (uses model device).
+            smpl_data (SMPLData): SMPL data object (poses, shape parameters).
 
         Returns:
-            ShapeComponents: ShapeComponents object with SMPL-specific shape parameters.
+            Tensor: Tensor of concatenated shape and dmpl parameters.
 
         """
-        out = ShapeComponents(
-            shape_components, use_expression=False, use_dmpl=self.use_dmpl, device=device if device else self.device
+        return smpl_data.get_shape_tensor(
+            shape_coeffs_size=self.betas_size, dmpl_coeffs_size=self.dmpls_size, expression_coeffs_size=0
         )
-        out.valid_attr_sizes = (self.betas_size, self.dmpls_size, 0)
-        return out
 
 
 """SMPLH body model class."""
 SMPLH = SMPL
 
 
-class SMPLX(BaseParametricModel):
+class SMPLX(BodyBaseParametricModel):
     """SMPLX body model class.
 
     This class implements the SMPLX body model, inheriting from SMPLH. It further specializes SMPLH to include
@@ -253,30 +243,16 @@ class SMPLX(BaseParametricModel):
 
         return shape_blend_components
 
-    def get_shape_components(
-        self,
-        shape_components: ShapeComponents | dict | torch.Tensor | None = None,
-        device: torch.device | str | None = None,
-    ) -> ShapeComponents:
-        """Get ShapeComponents object for SMPLX model.
-
-        Overrides the base class method to handle expression shape components.
+    def get_shape_tensor(self, smpl_data: SMPLData) -> Tensor:
+        """Get shape tensor from a SMPLData object.
 
         Args:
-            shape_components (ShapeComponents | dict | torch.Tensor | None, optional): Input shape components.
-                Defaults to None.
-            device (torch.device | str | None, optional): Device to put the ShapeComponents object on.
-                Defaults to None (uses model device).
+            smpl_data (SMPLData): SMPL data object (poses, shape parameters).
 
         Returns:
-            ShapeComponents: ShapeComponents object with SMPLX-specific shape parameters.
+            Tensor: Tensor of concatenated shape and expression parameters.
 
         """
-        out = ShapeComponents(
-            shape_components,
-            use_expression=self.use_expression,
-            use_dmpl=False,
-            device=device if device else self.device,
+        return smpl_data.get_shape_tensor(
+            shape_coeffs_size=self.betas_size, dmpl_coeffs_size=0, expression_coeffs_size=self.expression_coeffs_size
         )
-        out.valid_attr_sizes = (self.betas_size, 0, self.expression_coeffs_size)
-        return out

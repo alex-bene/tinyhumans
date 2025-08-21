@@ -11,7 +11,7 @@ from typing import Self
 import torch
 from torch import nn
 
-from tinyhumans.tools import get_logger
+from tinyhumans.tools import freeze_model, get_logger
 
 logger = get_logger(__name__)
 
@@ -73,6 +73,10 @@ class BaseModel(nn.Module):
             Self: A pre-trained model instance.
 
         """
+        if cls == BaseModel:
+            msg = "`BaseModel` should only be instantiated through a subclass"
+            raise NotImplementedError(msg)
+
         # Check pretrained model path
         pretrained_model_path: Path = Path(pretrained_model_path)
         if not pretrained_model_path.exists():
@@ -124,6 +128,8 @@ class BaseModel(nn.Module):
         state_dict = {k: v for k, v in state_dict.items() if k in instance_model_keys}
         model_instance.load_state_dict(state_dict)
 
+        # Freeze and set evaluation mode
+        freeze_model(model_instance)
         model_instance.eval()
 
         logger.info("Loaded model in evaluation mode from pre-trained weights file: %s", pretrained_model_path)

@@ -12,15 +12,17 @@ from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 import pyrender
+from PIL import Image
 from pyrender import Viewer
 from pyrender.constants import RenderFlags
+from scipy.spatial.transform import Rotation
 from trimesh import Trimesh, transformations
 
 from tinyhumans.tools import get_logger, img_from_array
 from tinyhumans.visualize import get_jet_colormap
 
 if TYPE_CHECKING:
-    from PIL.Image import Image
+    from tinyhumans.datatypes import CameraData, CameraIntrinsics
 
 
 # Initialize a logger
@@ -30,24 +32,10 @@ logger = get_logger(__name__)
 np.infty = np.inf  # noqa: NPY201
 
 
-def set_pyopengl_platform() -> None:
-    """Set the appropriate value for the PYOPENGL_PLATFORM environment variable based on the operating system.
+if platform.system() != "Darwin" or platform.processor() != "arm":
+    os.environ["PYOPENGL_PLATFORM"] = "egl"
 
-    This function sets the PYOPENGL_PLATFORM environment variable to "osmesa" for Linux, "egl" for macOS (if not arm64)
-    and Windows, which is required for pyrender to work correctly.
-    """
-    os_name = platform.system()
-
-    if os_name == "Linux":
-        os.environ["PYOPENGL_PLATFORM"] = "osmesa"
-    elif os_name == "Darwin":
-        if platform.processor() != "arm":
-            os.environ["PYOPENGL_PLATFORM"] = "egl"
-    elif os_name == "Windows":
-        os.environ["PYOPENGL_PLATFORM"] = "egl"
-
-
-set_pyopengl_platform()
+# TODO: image/sequence -> some argument exist in one but not the other biut make sense in both (e.g. floor)
 
 
 class PyRenderer:
@@ -239,7 +227,7 @@ class PyRenderer:
                 Defaults to None.
 
         """
-        self._camera_node.rotation = rotation if rotation is not None else np.eye(3)
+        self._camera_node.rotation = rotation if rotation is not None else np.array([0, 0, 0, 1.0])
 
     @property
     def camera_pose(self) -> np.ndarray:
@@ -299,19 +287,21 @@ class PyRenderer:
             self.scene.remove_node(self._direct_light)
             self._direct_light = None
 
-    def __call__(
+    def render_image(  # noqa: PLR0912
         self,
-        meshes: Trimesh | list[Trimesh],
+        meshes: Trimesh | list[Trimesh | None],
         render_params: dict[str, bool] | None = None,
         meshes_colors: list | None = None,
         bg_color: tuple[int, int, int] | None = None,
         view: str = "front",
         material: pyrender.MetallicRoughnessMaterial | None = None,
-    ) -> tuple[Image, np.ndarray]:
+        *,
+        skip_clear_scene: bool = False,
+    ) -> tuple[Image.Image, np.ndarray]:
         """Render the meshes.
 
         Args:
-            meshes (Trimesh | list[Trimesh]): The meshes to render.
+            meshes (Trimesh | list[Trimesh | None]): The meshes to render.
             render_params (dict[str, bool], optional): Rendering parameters dictionary. Defaults to {}.
             meshes_colors (list | None, optional): A list of colors for each mesh. Applies only when
                 `render_segmentation` is True. Defaults to None.
@@ -321,9 +311,11 @@ class PyRenderer:
                 Defaults to "front".
             material (pyrender.MetallicRoughnessMaterial | None, optional): The material to for the meshes.
                 Defaults to None.
+            skip_clear_scene (bool, optional): Whether to skip clearing the scene before rendering the meshes.
+                Defaults to False.
 
         Returns:
-            tuple[Image, np.ndarray]: A tuple containing the rendered image and the depth map.
+            tuple[Image.Image, np.ndarray]: A tuple containing the rendered image and the depth map.
 
         Raises:
             ValueError: If the view is not one of the valid options.
@@ -343,11 +335,14 @@ class PyRenderer:
             rotation_angle = {"top": 90.0, "bottom": -90.0}[view]
             rotation_direction = [1.0, 0.0, 0.0]
 
-        self.scene.mesh_nodes.clear()
+        if not skip_clear_scene:
+            self.scene.mesh_nodes.clear()
         seg_node_map = {}
         if isinstance(meshes, Trimesh):
             meshes = [meshes]
         for i, mesh in enumerate(meshes):
+            if mesh is None:
+                continue
             rtd_mesh = mesh
             if view != "front":
                 rot = transformations.rotation_matrix(np.radians(rotation_angle), rotation_direction)
@@ -376,6 +371,207 @@ class PyRenderer:
 
         # Return
         return img_from_array(color), depth
+
+    def get_floor_node(
+        self,
+        length: float = 15.0,
+        width: float = 15.0,
+        height: float = 0.0,
+        floor_color: tuple[int, int, int, int] | None = None,
+    ) -> pyrender.Mesh:
+        """Create a rectangular floor (e.g., 5m x 5m).
+
+        Args:
+            length (float, optional): The length of the floor in meters (along X axis). Defaults to 15.0.
+            width (float, optional): The width of the floor in meters (along Z axis). Defaults to 15.0.
+            height (float, optional): The height of the floor in meters (along Y axis). Defaults to 0.0.
+            floor_color (tuple[int, int, int,  int] | None, optional): The color of the floor. If set to None, then
+                (0.8, 0.8, 0.8, 1.0) is used. Defaults to None.
+
+        Returns:
+            Trimesh: The floor mesh.
+
+        """
+        # Define the 4 corners of the rectangle
+        vertices = np.array(
+            [
+                [-length / 2, height, -width / 2],
+                [length / 2, height, -width / 2],
+                [length / 2, height, width / 2],
+                [-length / 2, height, width / 2],
+            ]
+        )
+
+        floor_color = [0.8, 0.8, 0.8, 1.0] if floor_color is None else floor_color
+        floor_mesh = Trimesh(vertices=vertices, faces=np.array([[0, 1, 2], [0, 2, 3]]), vertex_colors=floor_color)
+
+        return pyrender.Mesh.from_trimesh(floor_mesh)
+
+    def render_sequence(  # TODO: check it works correctly
+        self,
+        meshes: list[list[Trimesh | None]],
+        render_params: dict[str, bool] | None = None,
+        meshes_colors: list | None = None,
+        bg_color: tuple[int, int, int] | None = None,
+        material: pyrender.MetallicRoughnessMaterial | None = None,
+        *,
+        video_overlay: bool = False,
+        mesh_transparency: float = 0.05,
+        camera_data: CameraData | None = None,
+        camera_intrinsics: CameraIntrinsics | None = None,
+        video_frames: list[np.ndarray] | None = None,
+        floor_color: tuple[int, int, int, int] | None = None,
+        skip_floor: bool = False,
+        skip_clear_scene: bool = False,
+    ) -> tuple[list[Image.Image], np.ndarray]:
+        """Render a sequence of meshes.
+
+        Args:
+            meshes (Trimesh | list[Trimesh | None]): The meshes to render. First dimension is the sequence length and
+                second dimension is the number of meshes per frame. If a mesh is None, it will be skipped.
+            render_params (dict[str, bool], optional): Rendering parameters dictionary. Defaults to {} if
+                `video_overlay` is False, otherwise defaults to `{"render_in_RGBA": True}`
+            meshes_colors (list | None, optional): A list of colors for each mesh. Applies only when
+                `render_segmentation` is True. Defaults to None.
+            bg_color (tuple[int, int, int] | None, optional): The background color of the rendered images. If None,
+                defaults to the current background color. Defaults to None.
+            material (pyrender.MetallicRoughnessMaterial | None, optional): The material to for the meshes.
+                Defaults to None.
+            video_overlay (bool, optional): Whether to render the meshes as an overlay on each frame of the video
+                frame. Defaults to False.
+            mesh_transparency (float, optional): The transparency of the meshes if `video_overlay` is True.
+                Defaults to 0.05.
+            camera_data (CameraData | None, optional): The camera data. Defaults to None.
+            camera_intrinsics (CameraIntrinsics | None, optional): The camera intrinsics. Defaults to None.
+            video_frames (list[np.ndarray] | None, optional): The original video frames. Defaults to None.
+            floor_color (tuple[int, int, int, int] | None, optional): The color of the floor. If set to None, then
+                (0.8, 0.8, 0.8, 1.0) is used. Defaults to None.
+            skip_floor (bool, optional): Whether to skip rendering the floor. Defaults to False.
+            skip_clear_scene (bool, optional): Whether to skip clearing the scene. Defaults to False.
+
+        Returns:
+            tuple[list[Image.Image], np.ndarray]: A tuple containing the rendered images and the depth maps.
+
+        """
+        if camera_intrinsics is not None:
+            focal_length = camera_intrinsics.get_focal_length(video_frames[0].shape[0])
+            self._camera_node.camera = pyrender.camera.IntrinsicsCamera(
+                fx=focal_length, fy=focal_length, cx=self.camera_center[0], cy=self.camera_center[1]
+            )
+
+        floor_node = self.get_floor_node(length=15.0, width=15.0, height=0.0, floor_color=floor_color)
+
+        imgs = []
+        depths = []
+        for frame_idx, frame_meshes in enumerate(meshes):
+            # Clear the scene
+            if not skip_clear_scene:
+                self.scene.mesh_nodes.clear()
+            # Add the floor
+            if not skip_floor:
+                self.scene.add(floor_node)
+            # Set the camera pose
+            if camera_data is not None:
+                T_cw = camera_data[frame_idx].T_cw
+                R_wc = camera_data[frame_idx].R_cw.T
+                T_wc = -R_wc @ T_cw
+                self.camera_rotation = Rotation.from_matrix(R_wc).as_quat()
+                self.camera_translation = T_wc
+            # Add the meshes
+            for frame_mesh_i in frame_meshes:
+                frame_mesh_i.visual.vertex_colors = (
+                    [1.0, 1.0, 1.0, 1.0 - mesh_transparency] if video_overlay else frame_mesh_i.visual.vertex_colors
+                )
+            # Render frame
+            img, depth = self.render_image(
+                frame_meshes,
+                render_params | ({"render_in_RGBA": True} if video_overlay else {}),
+                meshes_colors,
+                bg_color=[1.0, 1.0, 1.0, 0.0] if video_overlay else bg_color,
+                material=material if not video_overlay else None,
+                skip_clear_scene=True,
+            )
+            # Add video overlay
+            if video_overlay:
+                img = Image.alpha_composite(Image.fromarray(video_frames[frame_idx]).convert("RGBA"), img)
+            imgs.append(img)
+            depths.append(depth)
+
+        return imgs, np.stack(depths)
+
+    def __call__(
+        self,
+        meshes: Trimesh | list[Trimesh] | list[list[Trimesh]],
+        render_params: dict[str, bool] | None = None,
+        meshes_colors: list | None = None,
+        bg_color: tuple[int, int, int] | None = None,
+        view: str = "front",
+        material: pyrender.MetallicRoughnessMaterial | None = None,
+        *,
+        is_sequence: bool = False,
+        video_overlay: bool = False,
+        mesh_transparency: float = 0.05,
+        camera_data: dict | None = None,
+        camera_intrinsics: dict | None = None,
+        video_frames: list[np.ndarray] | None = None,
+        floor_color: tuple[int, int, int, int] | None = None,
+        skip_floor: bool = False,
+        skip_clear_scene: bool = False,
+    ) -> tuple[list[Image.Image] | Image.Image, np.ndarray]:
+        """Render a sequence of meshes.
+
+        Args:
+            meshes (Trimesh | list[Trimesh] | list[list[Trimesh]]): The meshes to render. If is_sequence is True, first
+                dimension is the sequence length and second dimension is the number of meshes per frame. If a mesh is
+                None, it will be skipped.
+            render_params (dict[str, bool], optional): Rendering parameters dictionary. Defaults to {} if
+                `video_overlay` is False, otherwise defaults to `{"render_in_RGBA": True}`
+            meshes_colors (list | None, optional): A list of colors for each mesh. Applies only when
+                `render_segmentation` is True. Defaults to None.
+            bg_color (tuple[int, int, int] | None, optional): The background color of the rendered images. If None,
+                defaults to the current background color. Defaults to None.
+            view (str, optional): The view direction. Must be one of "front", "back", "left", "right", "top", "bottom".
+                Defaults to "front".
+            material (pyrender.MetallicRoughnessMaterial | None, optional): The material to for the meshes.
+                Defaults to None.
+            is_sequence (bool, optional): Whether to render a sequence of meshes. Defaults to False.
+            video_overlay (bool, optional): Whether to render the meshes as an overlay on each frame of the video
+                frame (only for `is_sequence=True`). Defaults to False.
+            mesh_transparency (float, optional): The transparency of the meshes if `video_overlay` is True.
+                Defaults to 0.05.
+            camera_data (CameraData | None, optional): The camera data (only for `is_sequence=True`). Defaults to None.
+            camera_intrinsics (CameraIntrinsics | None, optional): The camera intrinsics (only for `is_sequence=True`).
+                Defaults to None.
+            video_frames (list[np.ndarray] | None, optional): The original video frames (only for `is_sequence=True`).
+                Defaults to None.
+            floor_color (tuple[int, int, int, int] | None, optional): The color of the floor. If set to None, then
+                (0.8, 0.8, 0.8, 1.0) is used. Defaults to None.
+            skip_floor (bool, optional): Whether to skip rendering the floor. Defaults to False.
+            skip_clear_scene (bool, optional): Whether to skip clearing the scene. Defaults to False.
+
+        Returns:
+            tuple[list[Image.Image], np.ndarray]: A tuple containing the rendered images and the depth maps.
+
+        """
+        if not is_sequence:
+            return self.render_image(
+                meshes, render_params, meshes_colors, bg_color, view, material, skip_clear_scene=skip_clear_scene
+            )
+        return self.render_sequence(
+            meshes,
+            render_params,
+            meshes_colors,
+            bg_color,
+            material,
+            video_overlay=video_overlay,
+            mesh_transparency=mesh_transparency,
+            camera_data=camera_data,
+            camera_intrinsics=camera_intrinsics,
+            video_frames=video_frames,
+            floor_color=floor_color,
+            skip_floor=skip_floor,
+            skip_clear_scene=skip_clear_scene,
+        )
 
     def __del__(self) -> None:
         """Need to delete before creating the renderer next time."""

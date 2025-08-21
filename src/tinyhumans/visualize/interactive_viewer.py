@@ -12,8 +12,9 @@ import tyro
 import viser
 from scipy.spatial.transform import Rotation
 
+from tinyhumans.datatypes import Scene4D
 from tinyhumans.models import SMPLX
-from tinyhumans.tools import McsParser, Scene4D, get_logger
+from tinyhumans.tools import get_logger
 
 logger = get_logger(__name__, "info")
 
@@ -104,7 +105,9 @@ class ClientSession:
         with self.gui_folders["Playback Controls"]:
             play_button = self.client.gui.add_button("Play/Pause")
             prev_next_buttons = self.client.gui.add_button_group("Frame Navigation", ("◀ Previous", "Next ▶"))
-            time_slider = self.client.gui.add_slider("Frame", 0, self.scene_data.num_frames - 1, 1, 0)
+            time_slider = self.client.gui.add_slider(
+                "Frame", 0, self.scene_data.num_frames - 1, DEFAULTS["SUBSAMPLING"], 0
+            )
             native_framerate = round(self._get_native_framerate())
             fps_slider = self.client.gui.add_slider(
                 "FPS",
@@ -141,12 +144,13 @@ class ClientSession:
                 new_frame = (self.animation_state["current_frame"] - step + num_frames) % num_frames
             else:
                 new_frame = (self.animation_state["current_frame"] + step) % num_frames
-            time_slider.value = new_frame
+            time_slider.value = min(new_frame, time_slider.max)
 
         @time_slider.on_update
         def _(_: viser.GuiSliderHandle) -> None:
-            self.animation_state["current_frame"] = time_slider.value
-            self.update_scene(time_slider.value)
+            clamped_frame_idx = min(len(self.smpl_outputs) - 1, time_slider.value)
+            self.animation_state["current_frame"] = clamped_frame_idx
+            self.update_scene(clamped_frame_idx)
 
         @fps_slider.on_update
         def _(_: viser.GuiSliderHandle) -> None:
@@ -158,7 +162,7 @@ class ClientSession:
             time_slider.step = subsampling_slider.value
             time_slider.value = round(time_slider.value / time_slider.step) * time_slider.step
 
-    def _setup_display_options_gui(self) -> None:
+    def _setup_display_options_gui(self) -> None:  # noqa: PLR0915
         """Set up the GUI for display options of the loaded scene."""
         if not self.scene_data or not (self.scene_data.video_frames or self.scene_data.camera_intrinsics):
             return
@@ -316,7 +320,7 @@ class ClientSession:
         self.status.value = "Loading..."
         self.status.visible = True
         try:
-            self.scene_data = McsParser(mcs_path).parse()
+            self.scene_data = Scene4D.from_msc_file(mcs_path)
             self._validate_scene(mcs_path)
             self._prepare_smpl_outputs()
             self._setup_playback_controls_gui()
@@ -343,30 +347,18 @@ class ClientSession:
         """Pre-compute SMPL model outputs for the loaded scene."""
         if not self.scene_data:
             return
-        self.smpl_outputs = []
-        for body_data in self.scene_data.smpl_data:
-            codec = body_data.codec
-            device = self.smplx_model.device
-            smpl_output = self.smplx_model(
-                poses={"body": torch.from_numpy(codec.body_pose).to(device).flatten(1, 2)[:, 3:]},
-                shape_components={
-                    "betas": torch.from_numpy(codec.shape_parameters).to(device).expand(codec.frame_count, -1)
-                },
-                root_orientations=torch.from_numpy(codec.body_pose).to(device).flatten(1, 2)[:, :3],
-                root_positions=torch.from_numpy(codec.body_translation).to(device),
-            )
-            smpl_output_np = {}
-            for key, value in smpl_output.items():
-                if isinstance(value, torch.Tensor):
-                    smpl_output_np[key] = value.cpu().numpy()
-            self.smpl_outputs.append(smpl_output_np)
+        # for body_data in self.scene_data.smpl_data:
+        self.smpl_outputs = (
+            self.smplx_model(self.scene_data.smpl_data.to(self.smplx_model.device))[0].detach().cpu().numpy()
+        )["verts"]
+        self.smpl_frame_presence = self.scene_data.smpl_data.frame_presence[0].detach().cpu().numpy()
 
     def _get_native_framerate(self) -> float:
         """Determine the native framerate from the scene data."""
-        if self.scene_data and self.scene_data.camera_data and len(self.scene_data.camera_data.times) > 1:
+        if self.scene_data and self.scene_data.camera_data is not None and len(self.scene_data.camera_data.times) > 1:
             return 1.0 / np.mean(np.diff(self.scene_data.camera_data.times))
-        if self.scene_data and self.scene_data.smpl_data:
-            return self.scene_data.smpl_data[0].codec.frame_rate
+        if self.scene_data and self.scene_data.smpl_data is not None:
+            return self.scene_data.smpl_data.frame_rate
         return 30.0
 
     def _setup_scene_elements(self) -> None:
@@ -388,9 +380,9 @@ class ClientSession:
             )
 
         # Add SMPL meshes
-        for i, smpl_output in enumerate(self.smpl_outputs):
+        for i, smpl_output in enumerate(self.smpl_outputs[0, :]):
             self.frame_nodes[f"/human_{i}"] = self.client.scene.add_mesh_simple(
-                f"/human_{i}", smpl_output["verts"][0], self.smplx_faces, color=(200, 200, 200)
+                f"/human_{i}", smpl_output, self.smplx_faces, color=(200, 200, 200)
             )
 
     def _get_video_frame_position(self, frame_idx: int, video_frame_position: VideoFramePosition) -> dict:
@@ -410,12 +402,12 @@ class ClientSession:
             T_cw = -R_cw @ T_wc
             z_axis_world = R_wc[:, 2]  # Viser camera's Z axis points "behind" the camera.
             max_depth = 0.0
-            for smpl_output in self.smpl_outputs:
-                num_smpl_frames = smpl_output["verts"].shape[0]
-                clamped_idx = min(frame_idx, num_smpl_frames - 1)
-                verts_w = smpl_output["verts"][clamped_idx]
+            for h_idx in range(self.smpl_outputs.shape[1]):
+                frame_presence = self.smpl_frame_presence[:, h_idx]
+                clamped_idx = min(frame_idx, len(frame_presence) - 1)
+                verts_w = self.smpl_outputs[clamped_idx, h_idx]
                 verts_c = (R_cw @ verts_w.T).T + T_cw
-                max_depth = max(max_depth, verts_c[:, 2].max())
+                max_depth = max(max_depth, verts_c[:, 2].max()) if frame_presence[clamped_idx] else max_depth
             distance = max_depth + 0.1 if max_depth > 0.0 else 10.0
             height = 2 * distance * np.tan(camera.fov / 2)
             position = camera.position + z_axis_world * distance
@@ -468,12 +460,12 @@ class ClientSession:
             frame_idx: The frame index to update the scene to.
 
         """
-        if not self.scene_data.camera_data:
+        if self.scene_data.camera_data is None:
             return
 
         cam_data = self.scene_data.camera_data
-        R_cw = cam_data.R_cw[frame_idx]
-        T_cw = cam_data.T_cw[frame_idx]
+        R_cw = cam_data.R_cw[frame_idx].cpu().numpy()
+        T_cw = cam_data.T_cw[frame_idx].cpu().numpy()
 
         # Viser expects the camera pose in the world frame (world-from-camera),
         # so we need to invert the camera-from-world transform.
@@ -501,13 +493,13 @@ class ClientSession:
             frame_idx: The frame index to update the scene to.
 
         """
-        for i, smpl_output in enumerate(self.smpl_outputs):
-            name = f"/human_{i}"
-            visible = frame_idx < smpl_output["verts"].shape[0]
+        for h_idx in range(self.smpl_outputs.shape[1]):
+            name = f"/human_{h_idx}"
+            visible = self.smpl_frame_presence[frame_idx, h_idx]
             self.frame_nodes[name].visible = visible
             if not visible:
                 continue
-            self.frame_nodes[name].vertices = smpl_output["verts"][frame_idx]
+            self.frame_nodes[name].vertices = self.smpl_outputs[frame_idx, h_idx]
             self.frame_nodes[name].opacity = (
                 self.gui_elements["mesh_opacity"].value
                 if self.video_frame_position == VideoFramePosition.RELATIVE_TO_CAMERA_BG
@@ -595,9 +587,9 @@ class InteractiveViewer:
 
 
 def main(
-    data_path: str | Path = Path("/Users/abenetatos/GitRepos/tinyhumans/assets/"),
+    data_path: str | Path = Path("/home/abenetatos/GitRepos/tinyhumans/hoigen_results_jz_mount"),
     device: str | None = None,
-    port: int = 8042,
+    port: int = 8047,
 ) -> None:
     """Run the entry point for the interactive viewer.
 
