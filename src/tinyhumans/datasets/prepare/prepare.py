@@ -3,12 +3,13 @@
 import argparse
 import os
 
+from tinytools import get_logger
+
 from tinyhumans.datasets.prepare.prepare_behave import prepare as prepare_behave_dataset
 from tinyhumans.datasets.prepare.prepare_grab import prepare as prepare_grab_dataset
 from tinyhumans.datasets.prepare.prepare_interact import prepare as prepare_interact_dataset
 from tinyhumans.datasets.prepare.prepare_intercap import prepare as prepare_intercap_dataset
 from tinyhumans.datasets.prepare.prepare_omomo import prepare as prepare_omomo_dataset
-from tinyhumans.tools import get_logger
 
 logger = get_logger(__name__, "info")
 

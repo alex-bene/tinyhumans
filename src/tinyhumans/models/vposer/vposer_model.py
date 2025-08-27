@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import torch
 from pytorch3d.transforms import matrix_to_axis_angle, rotation_6d_to_matrix
+from tinytools import get_logger
 from torch import nn
 from torch.nn import functional as F
 
 from tinyhumans.models.base_model import BaseModel
-from tinyhumans.tools import get_logger
 
 logger = get_logger(__name__)
 

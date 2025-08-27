@@ -16,8 +16,9 @@ from pytorch3d.transforms import axis_angle_to_matrix
 from torch import Tensor, nn
 
 from tinyhumans.datatypes import BodyParametricModelOutput, SMPLData
-from tinyhumans.models.base_model import BaseModel
 from tinyhumans.tools import apply_rigid_transform, freeze_model
+
+from .base_model import BaseModel
 
 
 class BodyBaseParametricModel(BaseModel):

@@ -11,10 +11,10 @@ import torch
 import tyro
 import viser
 from scipy.spatial.transform import Rotation
+from tinytools import get_logger
 
 from tinyhumans.datatypes import Scene4D
 from tinyhumans.models import SMPLX
-from tinyhumans.tools import get_logger
 
 logger = get_logger(__name__, "info")
 

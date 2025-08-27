@@ -12,9 +12,8 @@ from typing import TYPE_CHECKING
 import torch
 from pytorch3d.renderer import TexturesAtlas, TexturesVertex
 from pytorch3d.structures import Meshes as P3D_Meshes
+from tinytools import get_logger
 from trimesh import Trimesh
-
-from tinyhumans.tools import get_logger
 
 if TYPE_CHECKING:
     MeshesArguents = list[torch.Tensor] | torch.Tensor

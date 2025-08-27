@@ -14,9 +14,10 @@ from smplcodec.utils import PathType, coerce_type, extract_item, to_camel, to_sn
 from smplcodec.version import MAJOR
 from tensordict import MetaData, TensorClass
 from tensordict.utils import IndexType
+from tinytools import get_logger
 from torch import Tensor
 
-from tinyhumans.tools import get_logger, validate_tensor_shape
+from tinyhumans.tools import validate_tensor_shape
 
 logger = get_logger(__name__)
 

@@ -9,8 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from tinytools import get_logger
+
 from tinyhumans.parsers import McsParser
-from tinyhumans.tools import get_logger
 
 from .camera import CameraData, CameraIntrinsics
 from .smpl_data import SMPLData

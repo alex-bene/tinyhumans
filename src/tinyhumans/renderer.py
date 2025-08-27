@@ -16,9 +16,9 @@ from PIL import Image
 from pyrender import Viewer
 from pyrender.constants import RenderFlags
 from scipy.spatial.transform import Rotation
+from tinytools import get_logger, img_from_array
 from trimesh import Trimesh, transformations
 
-from tinyhumans.tools import get_logger, img_from_array
 from tinyhumans.visualize import get_jet_colormap
 
 if TYPE_CHECKING:
@@ -292,7 +292,7 @@ class PyRenderer:
         meshes: Trimesh | list[Trimesh | None],
         render_params: dict[str, bool] | None = None,
         meshes_colors: list | None = None,
-        bg_color: tuple[int, int, int] | None = None,
+        bg_color: tuple[int, int, int, int] | None = None,
         view: str = "front",
         material: pyrender.MetallicRoughnessMaterial | None = None,
         *,
@@ -305,7 +305,7 @@ class PyRenderer:
             render_params (dict[str, bool], optional): Rendering parameters dictionary. Defaults to {}.
             meshes_colors (list | None, optional): A list of colors for each mesh. Applies only when
                 `render_segmentation` is True. Defaults to None.
-            bg_color (tuple[int, int, int] | None, optional): The background color of the rendered image. If None,
+            bg_color (tuple[int, int, int, int] | None, optional): The background color of the rendered image. If None,
                 defaults to the current background color. Defaults to None.
             view (str, optional): The view direction. Must be one of "front", "back", "left", "right", "top", "bottom".
                 Defaults to "front".
@@ -407,7 +407,7 @@ class PyRenderer:
 
         return pyrender.Mesh.from_trimesh(floor_mesh)
 
-    def render_sequence(  # TODO: check it works correctly
+    def render_sequence(
         self,
         meshes: list[list[Trimesh | None]],
         render_params: dict[str, bool] | None = None,
@@ -485,7 +485,7 @@ class PyRenderer:
             # Render frame
             img, depth = self.render_image(
                 frame_meshes,
-                render_params | ({"render_in_RGBA": True} if video_overlay else {}),
+                render_params | ({"RGBA": True} if video_overlay else {}),
                 meshes_colors,
                 bg_color=[1.0, 1.0, 1.0, 0.0] if video_overlay else bg_color,
                 material=material if not video_overlay else None,

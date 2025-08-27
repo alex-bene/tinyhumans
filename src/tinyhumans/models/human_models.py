@@ -12,12 +12,12 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from tinyhumans.models.base_body_parametric_model import BodyBaseParametricModel
+from .base_body_parametric_model import BodyBaseParametricModel
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from tinyhumans.datatypes.smpl_data import SMPLData
+    from tinyhumans.datatypes import SMPLData
 
 
 class SMPL(BodyBaseParametricModel):
