@@ -3,11 +3,11 @@ name = "tinyhumans"
 version = "0.1.0"
 description = "Centralized library to deal with SMPL-family models"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10,<3.13"
 dependencies = [
-    "torch>=2.4.1",
-    "plotly>=5.24.1", # pytorch3d dependency for mesh viewer
-    # "tensordict>=0.7.2",
+    "torch>=2.6.0",
+    "plotly>=5.24.1",            # pytorch3d dependency for mesh viewer
+    "tensordict>=0.10.0",
     "trimesh>=4.5.3",
     "pyrender>=0.1.45",
     "rich>=13.9.4",
@@ -17,37 +17,48 @@ dependencies = [
     "tyro>=0.9.26",
     "viser>=1.0.0",
     "smplcodec>=2.0.2",
-    "ipywidgets>=8.1.7",
-    "pandas>=2.3.2",
-    "lang-sam",
     "tinytools",
+    "pytorch3d>=0.7.8",
 ]
-
-[project.optional-dependencies]
-build = ["setuptools", "cmake", "pybind11[global]"]
-run = ["pytorch3d==0.7.8+pt2.4.1cu121", "tensordict"]
 
 [tool.uv]
 no-build-isolation-package = ["pytorch3d"]
 
-[tool.uv.sources]
-# pytorch3d = [{ git = "https://github.com/facebookresearch/pytorch3d" }]
-pytorch3d = [{ index = "pytorch3d-wheels" }]
-tensordict = [
-    { git = "https://github.com/pytorch/tensordict", rev = "875d2fe9f9dc83563a74af7bafc83b75df6fa906" },
-]
-lang-sam = { git = "https://github.com/luca-medeiros/lang-segment-anything.git", rev = "10ed6870f5bca0787736d0aac10497f1dbc1e9c9" }
-tinytools = { git = "https://github.com/alex-bene/tinytools.git" }
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
+[tool.uv.sources]
+tensordict = { git = "https://github.com/pytorch/tensordict" }
+tinytools = { git = "https://github.com/alex-bene/tinytools.git" }
+# FOR DEVELOPMENT
+## Use prebuilt pytorch3d wheels for development
+pytorch3d = { index = "pytorch3d-wheels", group = "dev" }
+## Use torch with cu124 for development
+torch = [{ index = "pytorch-cu124", group = "dev" }]
+
+## The pytorch3d dev wheel
 [[tool.uv.index]]
 name = "pytorch3d-wheels"
 url = "https://miropsota.github.io/torch_packages_builder"
 explicit = true
+## The pytorch cuda124 dev wheel
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
+## The extra packages for development
 [dependency-groups]
-dev = ["pytest>=8.3.4", "icecream>=2.1.7"]
-
-demo = ["notebook>=7.3.2"]
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# For dev, pin pytorch and pytorch3d to specific versions
+dev = [
+    "pytest>=8.3.4",
+    "icecream>=2.1.7",
+    "notebook>=7.3.2",
+    # --- For Linux and Windows (where CUDA is available) ---
+    "torch==2.6.0+cu124; sys_platform != 'darwin'",
+    "pytorch3d==0.7.8+pt2.6.0cu124; sys_platform != 'darwin'",
+    # --- For macOS ---
+    "torch==2.6.0; sys_platform == 'darwin'",
+    "pytorch3d==0.7.8+pt2.6.0cpu; sys_platform == 'darwin'",
+]
