@@ -21,44 +21,77 @@ dependencies = [
     "pytorch3d>=0.7.8",
 ]
 
+[dependency-groups]
+cpu = [
+    "torch==2.6.0",
+    "pytorch3d==0.7.8+pt2.6.0cpu",
+    { include-group = "pt3d_dev" },
+]
+cu124 = [
+    "torch==2.6.0",
+    "pytorch3d==0.7.8+pt2.6.0cu124",
+    { include-group = "pt3d_dev" },
+]
+cu126 = [
+    "torch==2.7.1",
+    "pytorch3d==0.7.8+pt2.7.1cu126",
+    { include-group = "pt3d_dev" },
+]
+cu128 = [
+    "torch==2.7.1",
+    "pytorch3d==0.7.8+pt2.7.1cu128",
+    { include-group = "pt3d_dev" },
+]
+dev = ["pytest>=8.3.4", "icecream>=2.1.7", "notebook>=7.3.2"]
+pt3d_dev = ["pytorch3d==0.7.8"]
+
 [tool.uv]
 no-build-isolation-package = ["pytorch3d"]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+conflicts = [
+    [
+        { group = "cpu" },
+        { group = "cu124" },
+        { group = "cu126" },
+        { group = "cu128" },
+    ],
+]
 
 [tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cu124", group = "cu124" },
+    { index = "pytorch-cu126", group = "cu126" },
+    { index = "pytorch-cu128", group = "cu128" },
+]
+pytorch3d = { index = "pytorch3d-wheels", group = "pt3d_dev" }
 tensordict = { git = "https://github.com/pytorch/tensordict" }
 tinytools = { git = "https://github.com/alex-bene/tinytools.git" }
-# FOR DEVELOPMENT
-## Use prebuilt pytorch3d wheels for development
-pytorch3d = { index = "pytorch3d-wheels", group = "dev" }
-## Use torch with cu124 for development
-torch = [{ index = "pytorch-cu124", group = "dev" }]
 
-## The pytorch3d dev wheel
 [[tool.uv.index]]
 name = "pytorch3d-wheels"
 url = "https://miropsota.github.io/torch_packages_builder"
 explicit = true
-## The pytorch cuda124 dev wheel
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [[tool.uv.index]]
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
-## The extra packages for development
-[dependency-groups]
-# For dev, pin pytorch and pytorch3d to specific versions
-dev = [
-    "pytest>=8.3.4",
-    "icecream>=2.1.7",
-    "notebook>=7.3.2",
-    # --- For Linux and Windows (where CUDA is available) ---
-    "torch==2.6.0+cu124; sys_platform != 'darwin'",
-    "pytorch3d==0.7.8+pt2.6.0cu124; sys_platform != 'darwin'",
-    # --- For macOS ---
-    "torch==2.6.0; sys_platform == 'darwin'",
-    "pytorch3d==0.7.8+pt2.6.0cpu; sys_platform == 'darwin'",
-]
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
