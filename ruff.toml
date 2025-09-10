@@ -6,16 +6,31 @@ line-length = 120
 # select = ["C", "E", "F", "I", "W"]
 select = ["ALL"]
 ignore = [
-    "ANN002", "ANN003", "ANN401",
-    "C901", "COM812", "COM819",
-    "D107", "D206","D300",
-    "E111","E114","E117",
-    "FBT001","FBT002",
-    "N806", "N812",
-    "PLR0913", "PLR2004",
-    "Q000","Q001","Q002","Q003",
+    "ANN002",
+    "ANN003",
+    "ANN401",
+    "C901",
+    "COM812",
+    "COM819",
+    "D107",
+    "D206",
+    "D300",
+    "E111",
+    "E114",
+    "E117",
+    "FBT001",
+    "FBT002",
+    "N806",
+    "N812",
+    "PLR0913",
+    "PLR2004",
+    "Q000",
+    "Q001",
+    "Q002",
+    "Q003",
     "SLF001",
-    "TD003", "TD002",
+    "TD003",
+    "TD002",
     "W191",
 ]
 
@@ -30,13 +45,21 @@ ignore = [
     "ANN201",
     "D100",
     "D103",
-    "S101", # asserts allowed in tests...
-    "ARG", # Unused function args -> fixtures nevertheless are functionally relevant...
-    "FBT", # Don't care about booleans as positional arguments in tests, e.g. via @pytest.mark.parametrize()
+    "S101",   # asserts allowed in tests...
+    "ARG",    # Unused function args -> fixtures nevertheless are functionally relevant...
+    "FBT",    # Don't care about booleans as positional arguments in tests, e.g. via @pytest.mark.parametrize()
     # The below are debateable
     "PLR2004", # Magic value used in comparison, ...
-    "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
+    "S311",    # Standard pseudo-random generators are not suitable for cryptographic purposes
 ]
+
+"*.ipynb" = [
+    "T201",   # `print` found
+    "I001",   # Import block is un-sorted or un-formatted
+    "ERA001", # Found commented-out code
+    "F401",   # imported but unused
+]
+
 
 [format]
 skip-magic-trailing-comma = true
