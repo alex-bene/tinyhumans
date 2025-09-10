@@ -8,6 +8,7 @@ performing linear blend skinning to generate meshes.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -339,6 +340,11 @@ class BodyBaseParametricModel(BaseModel):
         root_position = root_position.expand(*batch_size, -1).unsqueeze(dim=-2)
 
         return BodyParametricModelOutput(verts=verts + root_position, joints=joints + root_position)
+
+    if TYPE_CHECKING:
+
+        def __call__(self, *args, **kwargs):
+            return self.forward(*args, **kwargs)
 
     def linear_blend_skinning(
         self, betas: Tensor, pose: Tensor, poses_in_axis_angles: bool = True
