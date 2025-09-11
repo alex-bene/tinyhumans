@@ -172,10 +172,10 @@ class BodyBaseParametricModel(BaseModel):
             raise NotImplementedError(msg)
 
         # Check pretrained model path
-        pretrained_model_path: Path = Path(pretrained_model_path)
+        pretrained_model_path = Path(pretrained_model_path)
         if not pretrained_model_path.exists():
             msg = f"Could not find the pretrained model path: {pretrained_model_path}"
-            raise ValueError(msg)
+            raise FileNotFoundError(msg)
 
         # Infer device type
         if device_map == "auto":
@@ -197,7 +197,7 @@ class BodyBaseParametricModel(BaseModel):
         pose_blend_components = torch.from_numpy(model_params_dict["posedirs"]).flatten(0, 1).T.to(device, torch_dtype)
         # The orthonormal principal components for shape conditioned displacements (num_vertices, 3, num_shape_coeffs)
         shape_blend_components = cls._load_shape_components(
-            model_params_dict, num_betas, dtype=torch_dtype, device=device, **kwargs
+            model_params_dict, num_betas, dtype=torch_dtype, device=device
         )
         num_betas = shape_blend_components.shape[-1]
 

@@ -6,11 +6,15 @@ BodyBaseParametricModel class and provide model-specific initialization and shap
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from torch import Tensor
+
+from tinyhumans.datasets.prepare.prepare_base import prepare as prepare_base
 
 from .base_body_parametric_model import BodyBaseParametricModel
 
@@ -256,3 +260,109 @@ class SMPLX(BodyBaseParametricModel):
         return smpl_data.get_shape_tensor(
             shape_coeffs_size=self.betas_size, dmpl_coeffs_size=0, expression_coeffs_size=self.expression_coeffs_size
         )
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path: str | Path,
+        num_betas: int | None = None,
+        device_map: str | torch.device | None = "auto",
+        torch_dtype: torch.dtype = torch.float32,
+        username: str | None = None,
+        password: str | None = None,
+        cache_folder: Path | None = None,
+        **kwargs,
+    ) -> SMPLX:
+        """Load a pre-trained model.
+
+        Args:
+            pretrained_model_name_or_path (str | Path): Path to the pretrained model parameters (.npz file) or model
+                type to auto-download (e.g. "neutra", "lockedhead_female").
+            num_betas (int | None, optional): Number of shape parameters (betas). Defaults to None.
+            device_map (str | torch.device): Device to map the model weights to.
+            torch_dtype (torch.dtype, optional): Data type of the model parameters. Defaults to torch.float32.
+            username (str | None, optional): Username for downloading the model. Required if
+                `pretrained_model_name_or_path` is not an existing file but a model type to download. Defaults to None.
+            password (str | None, optional): Password for downloading the model. Required if
+                `pretrained_model_name_or_path` is not an existing file but a model type to download. Defaults to None
+            cache_folder (Path | None, optional): Cache folder for downloading the model. If None, the cache folder
+                will be created in the user's home directory (~/.cache/tinyhumans/models). Defaults to None.
+            **kwargs: Additional keyword arguments passed to the model constructor.
+
+        Returns:
+            SMPLX: A pre-trained SMPLX instance.
+
+        """
+        # Check pretrained model path
+        pretrained_model_path = Path(pretrained_model_name_or_path)
+        auto_download_options = (
+            "male",
+            "female",
+            "neutral",
+            "lockedhead_male",
+            "lockedhead_female",
+            "lockedhead_neutral",
+        )
+        if not pretrained_model_path.exists() and pretrained_model_name_or_path not in auto_download_options:
+            msg = f"`pretrained_model_name_or_path` should be an existing file or one of {auto_download_options}"
+            raise ValueError(msg)
+
+        if cache_folder is None:
+            cache_folder = Path.home() / ".cache" / "tinyhumans" / "models"
+
+        output_dir = Path(cache_folder) / cls.__name__.lower()
+        if not pretrained_model_path.exists():
+            kwargs["gender"] = pretrained_model_name_or_path.replace("lockedhead_", "")
+            pretrained_model_path = output_dir / f"{pretrained_model_name_or_path}.npz"
+
+        if not pretrained_model_path.exists():
+            if password is None or username is None:
+                msg = (
+                    "`username` and `password` must be provided if `pretrained_model_name_or_path` is one of "
+                    f"{auto_download_options} and it's the first time the model is downloaded."
+                )
+                raise ValueError(msg)
+
+            # --- Base URL for Downloads ---
+            base_url = "https://download.is.tue.mpg.de/download.php"
+
+            # --- Download files ---
+            if "lockedhead" in pretrained_model_name_or_path:
+                files_to_download = [
+                    {
+                        "id": f"{base_url}?domain=smplx&resume=1&sfile={'smplx_lockedhead_20230207.zip'}",
+                        "name": "smplx_lockedhead_20230207.zip",
+                        "output_dir": output_dir,
+                        "gdrive": False,
+                        "post_data": {"username": username, "password": password},
+                        "check_exists": output_dir / f"{pretrained_model_name_or_path}.npz",
+                    }
+                ]
+            else:
+                files_to_download = [
+                    {
+                        "id": f"{base_url}?domain=smplx&resume=1&sfile={'models_smplx_v1_1.zip'}",
+                        "name": "models_smplx_v1_1.zip",
+                        "output_dir": output_dir,
+                        "gdrive": False,
+                        "post_data": {"username": username, "password": password},
+                        "check_exists": output_dir / f"{pretrained_model_name_or_path}.npz",
+                    }
+                ]
+            prepare_base(output_dir=output_dir, files_to_download=files_to_download, quiet=False)
+            # move files around from smplx.text to smplx/dsta/text.tt
+            for gender in ["FEMALE", "MALE", "NEUTRAL"]:
+                if (output_dir / "models" / "smplx").exists():
+                    src = output_dir / "models" / "smplx" / f"SMPLX_{gender}.npz"
+                    dst = output_dir / f"{gender.lower()}.npz"
+                    shutil.move(src, dst)
+                if (output_dir / "models_lockedhead" / "smplx").exists():
+                    src = output_dir / "models_lockedhead" / "smplx" / f"SMPLX_{gender}.npz"
+                    dst = output_dir / f"lockedhead_{gender.lower()}.npz"
+                    shutil.move(src, dst)
+            if (output_dir / "models").exists():
+                shutil.rmtree(output_dir / "models")
+            if (output_dir / "models_lockedhead").exists():
+                shutil.rmtree(output_dir / "models_lockedhead")
+
+        return super().from_pretrained(pretrained_model_path, num_betas, device_map, torch_dtype, **kwargs)
