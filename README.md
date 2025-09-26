@@ -13,12 +13,7 @@ For now, this is only tested and developed using `uv` and an M1 Mac. I have no i
 After installing `uv` (can be achieved with `brew install uv in mac`) run the following commands:
 ```bash
 uv python install 3.11
-uv sync
-```
-
-If you also want to run the notebook demo, use:
-```bash
-uv sync --group demo
+uv sync --group cu124 # or cu126, cu128, cpu based on your cuda version
 ```
 
 ## Types

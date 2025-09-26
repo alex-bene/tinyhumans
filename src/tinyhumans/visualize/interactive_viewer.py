@@ -562,7 +562,7 @@ class InteractiveViewer:
         """Load the pretrained SMPLX model."""
         support_dir = Path("downloads")
         model_path = support_dir / "models" / "smplx" / "SMPLX_NEUTRAL.npz"
-        return SMPLX.from_pretrained(pretrained_model_path=model_path, num_betas=10, device_map=self.device)
+        return SMPLX.from_pretrained(pretrained_model_name_or_path=model_path, num_betas=10, device_map=self.device)
 
     def _setup_scene(self) -> None:
         """Set up the initial scene environment."""
