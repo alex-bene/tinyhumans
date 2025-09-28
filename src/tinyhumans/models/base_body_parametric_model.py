@@ -328,18 +328,20 @@ class BodyBaseParametricModel(BaseModel):
         batch_size = smpl_data.batch_size
 
         # Linear blend skinning
-        verts, joints = self.linear_blend_skinning(
+        verts, joints, joints_rotations = self.linear_blend_skinning(
             betas=self.get_shape_tensor(smpl_data).expand(*batch_size, -1),
             pose=smpl_data.full_pose,
             poses_in_axis_angles=poses_in_axis_angles,
-        )
+        ).values()
 
         # Fill in default values if None
         root_position = smpl_data.body_translation
         root_position = self.root_position if root_position is None else root_position
         root_position = root_position.expand(*batch_size, -1).unsqueeze(dim=-2)
 
-        return BodyParametricModelOutput(verts=verts + root_position, joints=joints + root_position)
+        return BodyParametricModelOutput(
+            verts=verts + root_position, joints=joints + root_position, joints_rotations=joints_rotations
+        )
 
     if TYPE_CHECKING:
 
@@ -361,10 +363,12 @@ class BodyBaseParametricModel(BaseModel):
                 be transformed to rotation matrices in this case). Defaults to True.
 
         Returns:
-            tuple[torch.Tensor, torch.Tensor]:
-                - The vertices of the mesh after applying the shape and pose displacements with shape
-                  (B, T, H, num_vertices, 3).
-                - The joints of the model with shape (B, T, H, num_joints, 3).
+            dict[str, torch.Tensor]: A dictionary containing the following tensors:
+
+                - verts (torch.Tensor): The vertices of the mesh after applying the shape and pose displacements with
+                    shape(B, T, H, num_vertices, 3).
+                - joints (torch.Tensor): The joints of the model with shape (B, T, H, num_joints, 3).
+                - joints_rotations (torch.Tensor): The rotations of the joints with shape (B, T, H, num_joints, 3, 3).
 
         """
         # 0. Infer parameters
@@ -409,4 +413,4 @@ class BodyBaseParametricModel(BaseModel):
         ## (B x T x H x V x 4 x 4) x (B x T x H x V x 3) -> (B x T x H x V x 3)
         verts = torch.matmul(skinning_transforms, torch.unsqueeze(verts_posed, dim=-1))[..., :3, 0]
 
-        return verts, joints_posed
+        return {"verts": verts, "joints": joints_posed, "joints_rotations": joint_transforms[..., :3, :3]}

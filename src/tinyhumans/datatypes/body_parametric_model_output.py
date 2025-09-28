@@ -17,22 +17,27 @@ if TYPE_CHECKING:
 class BodyParametricModelOutput:
     """Output of a body parametric model.
 
-    This class stores the output of a body parametric model, including vertices and joints.
+    This class stores the output of a body parametric model, including vertices, joints and joints_rotations.
     It supports extracting Pytorch3D Meshes and Trimesh objects representing ecah body across samples and timesteps.
 
     Attributes:
         verts: Tensor of vertices of shape (batch_count, frame_count, human_count, num_verts, 3)
         joints: Tensor of joints of shape (batch_count, frame_count, human_count, num_joints, 3)
+        joints_rotations: Tensor of joints rotations of shape (batch_count, frame_count, human_count, num_joints, 3, 3)
 
     """
 
     verts: Tensor
     joints: Tensor | None = None
+    joints_rotations: Tensor | None = None
 
     def __post_init__(self) -> None:
         """Check that the inputs are valid and set batch_size and device possible."""
         if self.joints is not None and self.joints.ndim != self.verts.ndim:
             msg = "joints and verts must have the same number of dimensions"
+            raise ValueError(msg)
+        if self.joints_rotations is not None and self.joints_rotations.ndim != (self.verts.ndim + 1):
+            msg = "joints_rotations must have exactly one more dimension than verts"
             raise ValueError(msg)
         self.auto_batch_size_(3)
         if self.device is None:
