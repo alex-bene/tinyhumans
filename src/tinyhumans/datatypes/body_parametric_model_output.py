@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import trimesh
+from pytorch3d.structures import Meshes
 from tensordict import tensorclass
-
-from tinyhumans.mesh import Meshes
 
 if TYPE_CHECKING:
     from torch import Tensor

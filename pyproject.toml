@@ -21,49 +21,34 @@ dependencies = [
     "pytorch3d>=0.7.8",
 ]
 
+[project.optional-dependencies]
+cpu = ["torch==2.8.0", "pytorch3d==0.7.8+pt2.8.0cpu"]
+cu124 = ["torch==2.6.0", "pytorch3d==0.7.8+pt2.6.0cu124"]
+cu126 = ["torch==2.8.0", "pytorch3d==0.7.8+pt2.8.0cu126"]
+cu128 = ["torch==2.8.0", "pytorch3d==0.7.8+pt2.8.0cu128"]
+
 [dependency-groups]
-cpu = [
-    "torch==2.6.0",
-    "pytorch3d==0.7.8+pt2.6.0cpu",
-    { include-group = "pt3d_dev" },
-]
-cu124 = [
-    "torch==2.6.0",
-    "pytorch3d==0.7.8+pt2.6.0cu124",
-    { include-group = "pt3d_dev" },
-]
-cu126 = [
-    "torch==2.7.1",
-    "pytorch3d==0.7.8+pt2.7.1cu126",
-    { include-group = "pt3d_dev" },
-]
-cu128 = [
-    "torch==2.7.1",
-    "pytorch3d==0.7.8+pt2.7.1cu128",
-    { include-group = "pt3d_dev" },
-]
 dev = ["pytest>=8.3.4", "icecream>=2.1.7", "notebook>=7.3.2"]
-pt3d_dev = ["pytorch3d==0.7.8"]
 
 [tool.uv]
 no-build-isolation-package = ["pytorch3d"]
 conflicts = [
     [
-        { group = "cpu" },
-        { group = "cu124" },
-        { group = "cu126" },
-        { group = "cu128" },
+        { extra = "cpu" },
+        { extra = "cu124" },
+        { extra = "cu126" },
+        { extra = "cu128" },
     ],
 ]
 
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cpu", group = "cpu" },
-    { index = "pytorch-cu124", group = "cu124" },
-    { index = "pytorch-cu126", group = "cu126" },
-    { index = "pytorch-cu128", group = "cu128" },
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu124", extra = "cu124" },
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
 ]
-pytorch3d = { index = "pytorch3d-wheels", group = "pt3d_dev" }
+pytorch3d = { index = "pytorch3d-wheels" }
 tensordict = { git = "https://github.com/pytorch/tensordict" }
 tinytools = { git = "https://github.com/alex-bene/tinytools.git" }
 

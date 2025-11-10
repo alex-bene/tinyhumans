@@ -99,6 +99,15 @@ class SMPLData(TensorClass):
     shape_parameters: Tensor | None = None  # [B x T x N x 10-300] betas
     shape_aggregation_method: Literal["mean", "first", "last"] = "first"
 
+    def post_init(self) -> None:
+        """Post-initialization method."""
+        if self.shape_aggregation_method not in ["mean", "first", "last"]:
+            msg = (
+                f"Invalid shape aggregation method {self.shape_aggregation_method}. "
+                "Should be 'mean', 'first' or 'last'."
+            )
+            raise ValueError(msg)
+
     @property
     def _shape_parameters(self) -> Tensor | None:
         """Access the internal representation of `shape_parameters` attribute."""
@@ -270,7 +279,9 @@ class SMPLData(TensorClass):
             if name == "shape_parameters":
                 # shape_parameters is a tensor of shape (B x T x N x 10-300) internally (for tensorclass to work nicely)
                 # but should be used as a tensor of size (B x N x 10-300) or (10-300) by users
-                value: Tensor = self._unsqueeze_to_ndims(value, 3)  # B x N x 10-300
+                if value.dim() == 4:  # B x T x N x 10-300
+                    value = self._shape_parameters_aggregation(value)
+                value: Tensor = self._unsqueeze_to_ndims(value, 3, is_shape=True)  # B x N x 10-300
                 self.validate_tensor_shape_by_name(name, 3, [f"{B}, 1", f"{H}, 1", "10-300"], value=value)
                 value = value.unsqueeze(1)  # B x 1 x N x 10-300
                 shape = [-1]
@@ -315,13 +326,14 @@ class SMPLData(TensorClass):
             except KeyError:
                 pass
 
-    def _unsqueeze_to_ndims(self, tensor: Tensor, ndims: int = 4) -> Tensor:
+    def _unsqueeze_to_ndims(self, tensor: Tensor, ndims: int, is_shape: bool = False) -> Tensor:
         if tensor.ndim > ndims:
             msg = f"This tensor must be at most {ndims}-dimensional. [Batch Size x Frame Count x Human Count ...]"
             raise ValueError(msg)
 
+        non_batch_dims = ndims - (3 if not is_shape else 2)
         while tensor.ndim < ndims:
-            tensor = tensor.unsqueeze(0)
+            tensor = tensor.unsqueeze(0 if tensor.ndim <= non_batch_dims else 1)
 
         return tensor
 
@@ -469,14 +481,15 @@ class SMPLData(TensorClass):
 
         data = {k: extract_item(v) for k, v in data.items()}
         data = {
-            to_snake(k): np.expand_dims(v, axis=1 if v.ndim > 1 else 0) if isinstance(v, np.ndarray) else v
+            to_snake(k): np.expand_dims(v, axis=1 if v.ndim > 1 else 0)[None, ...] if isinstance(v, np.ndarray) else v
             for k, v in data.items()
         }
 
         frame_count = data.pop("frame_count", None)
         if "codec_version" not in data:
             data["codec_version"] = 1
-        obj = cls(**data).to(device, dtype)
+
+        obj = cls(**data).to(device=device).to(dtype=dtype)
         if frame_count is not None and frame_count != obj.frame_count:
             msg = (
                 f"Frame count of {frame_count} from file does not match the inferred frame count of {obj.frame_count}."
@@ -636,7 +649,15 @@ class SMPLData(TensorClass):
         )
         return torch.cat(shape_parameters + dmpl_parameters + expression_parameters, dim=-1)
 
-    def set_shape_tensor(  # noqa: PLR0912
+    def _shape_parameters_aggregation(self, shape_parameters: torch.Tensor) -> torch.Tensor:
+        if self.shape_aggregation_method == "first":
+            return shape_parameters[:, 0]
+        if self.shape_aggregation_method == "last":
+            return shape_parameters[:, -1]
+        # Else if self.shape_aggregation_method == "mean"
+        return shape_parameters.mean(dim=1)
+
+    def set_shape_tensor(
         self,
         full_shape_tensor: Tensor,
         shape_coeffs_size: int | None = None,
@@ -646,7 +667,7 @@ class SMPLData(TensorClass):
         """Set shape tensor of a SMPLData object [batch_count x frame_count x human_count x shape_expr_dmpl_coeffs].
 
         Args:
-            full_shape_tensor (Tensor): Tensor of concatenated shape, dmppl and expression parameters.
+            full_shape_tensor (Tensor): Tensor of concatenated shape, dmpl and expression parameters.
             shape_coeffs_size (int | None, optional): Size of shape parameters. If `None`, the size is infered from the
                 object data, if set. If None and the corresponding object's field is also None, then throws an error.
                 Defaults to None.
@@ -694,6 +715,9 @@ class SMPLData(TensorClass):
             raise TypeError(msg)
 
         # Make sure the full_shape_tensor has the correct size
+        if full_shape_tensor.ndim != 4:
+            msg = f"Expected full_shape_tensor to be 4-dimensional, got {full_shape_tensor.ndim}"
+            raise ValueError(msg)
         if full_shape_tensor.size(-1) != shape_coeffs_size + expression_coeffs_size + dmpl_coeffs_size:
             msg = (
                 f"Expected shape tensor size to be {shape_coeffs_size + expression_coeffs_size + dmpl_coeffs_size}, got"
@@ -704,12 +728,8 @@ class SMPLData(TensorClass):
         ## for "shape_parameters" we aggregate based on the self.shape_aggregation_method
         if not shape_coeffs_size:
             self.shape_parameters = None
-        elif self.shape_aggregation_method == "first":
-            self.shape_parameters = full_shape_tensor[..., :shape_coeffs_size][:, 0]
-        elif self.shape_aggregation_method == "last":
-            self.shape_parameters = full_shape_tensor[..., :shape_coeffs_size][:, -1]
-        elif self.shape_aggregation_method == "mean":
-            self.shape_parameters = full_shape_tensor[..., :shape_coeffs_size].mean(dim=1)
+        else:
+            self.shape_parameters = self._shape_parameters_aggregation(full_shape_tensor[..., :shape_coeffs_size])
 
         start_idx = shape_coeffs_size
         for attr_name, attr_size in (
