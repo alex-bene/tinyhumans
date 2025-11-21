@@ -16,7 +16,7 @@ dependencies = [
     "gdown>=5.2.0",
     "tyro>=0.9.26",
     "viser>=1.0.0",
-    "smplcodec>=2.0.2",
+    "smplcodec>=2.0.2,<2.1.0",
     "tinytools",
     "pytorch3d>=0.7.8",
 ]
