@@ -19,8 +19,6 @@ from tinyhumans.datasets.prepare.prepare_base import prepare as prepare_base
 from .base_body_parametric_model import BodyBaseParametricModel
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from tinyhumans.datatypes import SMPLData
 
 

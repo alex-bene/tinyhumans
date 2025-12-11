@@ -453,8 +453,8 @@ class SMPLData(TensorClass):
         """
         # Create base SMPLData instance
         smpl_data = cls(
-            smpl_version=smpl_version,
-            gender=gender,
+            smpl_version=SMPLVersion.from_string(smpl_version) if isinstance(smpl_version, str) else smpl_version,
+            gender=SMPLGender.from_string(gender) if isinstance(gender, str) else gender,
             frame_rate=frame_rate,
             body_translation=body_translation,
             expression_parameters=expression_parameters,

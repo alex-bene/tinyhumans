@@ -340,13 +340,29 @@ class BodyBaseParametricModel(BaseModel):
         root_position = root_position.expand(*batch_size, -1).unsqueeze(dim=-2)
 
         return BodyParametricModelOutput(
-            verts=verts + root_position, joints=joints + root_position, joints_rotations=joints_rotations
+            vertices=verts + root_position, joints=joints + root_position, joints_rotations=joints_rotations
         )
 
     if TYPE_CHECKING:
 
-        def __call__(self, *args, **kwargs):
-            return self.forward(*args, **kwargs)
+        def __call__(
+            self, smpl_data: SMPLData | dict, *, poses_in_axis_angles: bool = True
+        ) -> BodyParametricModelOutput:
+            """Forward pass of the base parametric model.
+
+            Generates body meshes from pose and shape parameters using linear blend skinning.
+
+            Args:
+                smpl_data (SMPLData | dict | None, optional): SMPL data object (poses, shape parameters). Defaults to None.
+                poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations (need to
+                    be transformed to rotation matrices in this case). Defaults to True.
+
+            Returns:
+                BodyMeshes: Output body meshes with vertices, faces, joints, poses, shape components, root positions,
+                    root orientation, and vertices template.
+
+            """
+            return self.forward(smpl_data, poses_in_axis_angles=poses_in_axis_angles)
 
     def linear_blend_skinning(
         self, betas: Tensor, pose: Tensor, poses_in_axis_angles: bool = True

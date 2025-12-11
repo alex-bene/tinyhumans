@@ -20,23 +20,23 @@ class BodyParametricModelOutput:
     It supports extracting Pytorch3D Meshes and Trimesh objects representing ecah body across samples and timesteps.
 
     Attributes:
-        verts: Tensor of vertices of shape (batch_count, frame_count, human_count, num_verts, 3)
+        vertices: Tensor of vertices of shape (batch_count, frame_count, human_count, num_vertices, 3)
         joints: Tensor of joints of shape (batch_count, frame_count, human_count, num_joints, 3)
         joints_rotations: Tensor of joints rotations of shape (batch_count, frame_count, human_count, num_joints, 3, 3)
 
     """
 
-    verts: Tensor
+    vertices: Tensor
     joints: Tensor | None = None
     joints_rotations: Tensor | None = None
 
     def __post_init__(self) -> None:
         """Check that the inputs are valid and set batch_size and device possible."""
-        if self.joints is not None and self.joints.ndim != self.verts.ndim:
-            msg = "joints and verts must have the same number of dimensions"
+        if self.joints is not None and self.joints.ndim != self.vertices.ndim:
+            msg = "joints and vertices must have the same number of dimensions"
             raise ValueError(msg)
-        if self.joints_rotations is not None and self.joints_rotations.ndim != (self.verts.ndim + 1):
-            msg = "joints_rotations must have exactly one more dimension than verts"
+        if self.joints_rotations is not None and self.joints_rotations.ndim != (self.vertices.ndim + 1):
+            msg = "joints_rotations must have exactly one more dimension than vertices"
             raise ValueError(msg)
         self.auto_batch_size_(3)
         if self.device is None:
@@ -51,7 +51,7 @@ class BodyParametricModelOutput:
             raise ValueError(msg)
         return [
             [Meshes(verts=verts_ij, faces=faces.expand((verts_ij.shape[0], -1, -1))) for verts_ij in verts_i]
-            for verts_i in self.verts
+            for verts_i in self.vertices
         ]
 
     def get_trimeshes(self, faces: Tensor) -> list[list[trimesh.Trimesh]]:
@@ -67,5 +67,5 @@ class BodyParametricModelOutput:
                 ]
                 for verts_ij in verts_i
             ]
-            for verts_i in self.verts
+            for verts_i in self.vertices
         ]
