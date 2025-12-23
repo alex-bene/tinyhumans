@@ -9,10 +9,8 @@ from pathlib import Path
 from typing import Self
 
 import torch
-from tinytools import get_logger
+from tinytools import freeze_model, get_logger
 from torch import nn
-
-from tinyhumans.tools import freeze_model
 
 logger = get_logger(__name__)
 

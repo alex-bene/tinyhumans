@@ -1,2 +1,2 @@
 from .matrix_transforms import apply_rigid_transform, get_homogeneous_transform_matrix
-from .torch import freeze_model, validate_tensor_shape
+from .torch import validate_tensor_shape

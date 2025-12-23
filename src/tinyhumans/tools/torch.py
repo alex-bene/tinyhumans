@@ -1,6 +1,5 @@
 """Pytorch related tools."""
 
-import torch
 from torch import Tensor
 
 
@@ -29,9 +28,3 @@ def validate_tensor_shape(
         ):
             msg = f"{tensor_name} shape should be {shape}"
             raise ValueError(msg)
-
-
-def freeze_model(model: torch.nn.Module) -> None:
-    """Freeze all model parameters."""
-    for param in model.parameters():
-        param.requires_grad = False
