@@ -3300,6 +3300,7 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "tyro" },
     { name = "viser" },
+    { name = "xxhash" },
 ]
 
 [package.optional-dependencies]
@@ -3352,6 +3353,7 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.12.2" },
     { name = "tyro", specifier = ">=0.9.26" },
     { name = "viser", specifier = ">=1.0.0" },
+    { name = "xxhash", specifier = ">=3.5.0" },
 ]
 provides-extras = ["cpu", "cu124", "cu126", "cu128"]
 
