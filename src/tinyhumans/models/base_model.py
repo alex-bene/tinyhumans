@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Self
 
 import torch
-from tinytools import freeze_model, get_logger
+from tinytools import freeze_module, get_logger
 from torch import nn
 
 logger = get_logger(__name__)
@@ -128,7 +128,7 @@ class BaseModel(nn.Module):
         model_instance.load_state_dict(state_dict)
 
         # Freeze and set evaluation mode
-        freeze_model(model_instance)
+        freeze_module(model_instance)
         model_instance.eval()
 
         logger.info("Loaded model in evaluation mode from pre-trained weights file: %s", pretrained_model_path)

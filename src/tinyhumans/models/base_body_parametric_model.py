@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from pytorch3d.transforms import axis_angle_to_matrix
-from tinytools import freeze_model
+from tinytools import freeze_module
 from torch import Tensor, nn
 
 from tinyhumans.datatypes import BodyParametricModelOutput, SMPLData
@@ -220,7 +220,7 @@ class BodyBaseParametricModel(BaseModel):
         obj.pose_blend_components = nn.Parameter(pose_blend_components).to(device, torch_dtype)
 
         # Freeze and set evaluation mode
-        freeze_model(obj)
+        freeze_module(obj)
         obj.eval()
 
         return obj.to(device, torch_dtype)
@@ -354,9 +354,10 @@ class BodyBaseParametricModel(BaseModel):
             Generates body meshes from pose and shape parameters using linear blend skinning.
 
             Args:
-                smpl_data (SMPLData | dict | None, optional): SMPL data object (poses, shape parameters). Defaults to None.
-                poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations (need to
-                    be transformed to rotation matrices in this case). Defaults to True.
+                smpl_data (SMPLData | dict | None, optional): SMPL data object (poses, shape parameters).
+                    Defaults to None.
+                poses_in_axis_angles (bool, optional): Whether the provided poses are in axis angle representations
+                    (need to be transformed to rotation matrices in this case). Defaults to True.
 
             Returns:
                 BodyMeshes: Output body meshes with vertices, faces, joints, poses, shape components, root positions,
