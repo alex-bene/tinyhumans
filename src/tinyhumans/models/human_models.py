@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 class SMPL(BodyBaseParametricModel):
     """SMPL body model class.
 
-    This class implements the SMPL body model, inheriting from BodyBaseParametricModel. It initializes the SMPL model with
-    specific parameters and configurations, including handling of DMPL shape components.
+    This class implements the SMPL body model, inheriting from BodyBaseParametricModel. It initializes the SMPL model
+    with specific parameters and configurations, including handling of DMPL shape components.
 
     Attributes:
         dmpls_size (int): Size of DMPL shape parameters, if used.

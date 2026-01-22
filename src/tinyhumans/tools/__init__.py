@@ -1,2 +1,2 @@
-from .matrix_transforms import apply_rigid_transform, get_homogeneous_transform_matrix
+from .matrix_transforms import apply_rigid_transform, get_homogeneous_transform_matrix, inverse_stereographic_projection
 from .torch import validate_tensor_shape

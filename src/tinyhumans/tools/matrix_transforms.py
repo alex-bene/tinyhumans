@@ -68,3 +68,22 @@ def apply_rigid_transform(
     rel_transforms = transforms - pad(torch.matmul(transforms, joints_homogen), (3, 0))
 
     return posed_joints, rel_transforms
+
+
+def inverse_stereographic_projection(points: torch.Tensor) -> torch.Tensor:
+    """Project 2D points to the unit sphere using inverse stereographic projection.
+
+    Args:
+        points (torch.Tensor): A tensor of shape (..., 2)
+
+    Returns:
+        torch.Tensor: A tensor of shape (..., 3) with norm 1 on the last dimension.
+
+    """
+    u = points[..., 0]
+    v = points[..., 1]
+    denom = u**2 + v**2 + 1
+    x = 2 * u / denom
+    y = 2 * v / denom
+    z = (u**2 + v**2 - 1) / denom
+    return torch.stack([x, y, z], dim=-1)
