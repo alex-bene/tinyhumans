@@ -71,10 +71,10 @@ def test_casting_and_dim_unsqueeze() -> None:
     assert smpl._shape_parameters.shape == (1, 1, 1, 100)
     smpl = SMPLData()
     smpl.body_translation = torch.ones(2, 3)
-    assert smpl.body_translation.shape == (1, 1, 2, 3)
+    assert smpl.body_translation.shape == (2, 1, 1, 3)
     smpl = SMPLData()
     smpl.body_pose = torch.ones(12, 2, 22, 3)
-    assert smpl.body_pose.shape == (1, 12, 2, 22, 3)
+    assert smpl.body_pose.shape == (12, 1, 2, 22, 3)
     smpl = SMPLData()
     smpl.head_pose = torch.ones(14, 12, 2, 3, 3)
     assert smpl.head_pose.shape == (14, 12, 2, 3, 3)
@@ -105,9 +105,9 @@ def test_shape_parameters() -> None:
     assert smpl.human_count == 1
     assert not smpl.batch_size  # batch_size is never set when the only tensor ser it `shape_parameters`
     smpl = SMPLData(shape_parameters=torch.zeros(5, 100))
-    assert smpl.batch_count == 1
+    assert smpl.batch_count == 5
     assert smpl.frame_count is None
-    assert smpl.human_count == 5
+    assert smpl.human_count == 1
     assert not smpl.batch_size
     smpl = SMPLData(shape_parameters=torch.zeros(12, 5, 100))
     assert smpl.batch_count == 12

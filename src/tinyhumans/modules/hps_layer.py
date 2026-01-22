@@ -10,8 +10,7 @@ from pytorch3d.transforms.rotation_conversions import (
 )
 from smplcodec import SMPLVersion
 from tinytools.threeD.pose_target import PoseTarget, PoseTargetFactory
-from tinytools.torch import ConstantLayer, FFBlock
-from tinytools.torch.modules import LocationHead
+from tinytools.torch.modules import ConstantLayer, FFBlock, LocationHead
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.functional import pad
@@ -25,9 +24,11 @@ class HandsLayer(nn.Module):
 
     def __init__(
         self,
+        token_dim: int,
         num_hand_joints: int,
-        ff_block_kwargs: dict,
+        dropout: float = 0.1,
         no_hand_joints: bool = False,
+        ff_block_kwargs: dict | None = None,
         rotation_representation: Literal["6D", "axis_angle", "quaternion"] = "6D",
     ) -> None:
         super().__init__()
@@ -43,6 +44,17 @@ class HandsLayer(nn.Module):
             6 if self.rotation_representation == "6d" else 3 if self.rotation_representation == "axis_angle" else 4
         )
 
+        ff_block_kwargs = {
+            "input_dim": token_dim,
+            "hidden_dim": 4 * token_dim,
+            "bias": True,
+            "dropout": dropout,
+            "mlp_type": "gated",
+            "activation_fn": F.silu,
+            "norm_first": True,
+            "norm_fn": nn.LayerNorm,  # try nn.Identity
+            "residual": False,
+        } | (ff_block_kwargs or {})
         self.left_hand_pose_head = FFBlock(output_dim=self.rotation_dim, **ff_block_kwargs)  # first hand joint
         self.left_hand_extra_pose_head = (
             None
@@ -83,15 +95,13 @@ class HPSLayer(torch.nn.Module):
 
     def __init__(
         self,
-        latent_dim: int,
+        token_dim: int,
         num_shape_parameters: int = 10,
         no_global_orientation: bool = False,
         no_global_translation: bool = False,
         no_hand_joints: bool = True,
         no_head_joints: bool = True,
         dropout: float = 0.1,
-        token_projectors_depth: int = 1,
-        latent_transformer_kwargs: dict | None = None,
         body_type: Literal["smpl", "smplh", "smplx"] = "smpl",
         ff_block_kwargs: dict | None = None,
         pose_target_convention: str = "LogarithmicDisparitySpace",
@@ -110,50 +120,18 @@ class HPSLayer(torch.nn.Module):
         self.rotation_dim = (
             6 if self.rotation_representation == "6d" else 3 if self.rotation_representation == "axis_angle" else 4
         )
-        # Latent transformer
-        ## Latent tokens
-        self.latent_tokens = nn.Embedding(2, latent_dim)  # smpl, translation TODO: add hands tokens here?
-        ## Initialize latent transformer
-        latent_transformer_kwargs = {
-            "d_model": latent_dim,
-            "nhead": 8,
-            "dim_feedforward": 4 * latent_dim,
-            "dropout": dropout,
-            "activation": "relu",
-            "batch_first": True,
-            "norm_first": False,
-            "bias": True,
-            "num_layers": 4,
-            "output_norm": nn.LayerNorm,
-        } | (latent_transformer_kwargs or {})
-        num_layers = latent_transformer_kwargs.pop("num_layers")
-        output_norm = latent_transformer_kwargs.pop("output_norm")(latent_transformer_kwargs["d_model"])
-        latent_model_layer = nn.TransformerDecoderLayer(**latent_transformer_kwargs)
-        self.latent_model = nn.TransformerDecoder(latent_model_layer, num_layers=num_layers, norm=output_norm)
         # Token projectors
         ff_block_kwargs = {
-            "input_dim": latent_dim,
-            "hidden_dim": 4 * latent_dim,
+            "input_dim": token_dim,
+            "hidden_dim": 4 * token_dim,
             "bias": True,
             "dropout": dropout,
             "mlp_type": "gated",
             "activation_fn": F.silu,
-            "norm_first": False,
-            "norm_fn": nn.LayerNorm,
-            "residual": True,
+            "norm_first": True,
+            "norm_fn": nn.LayerNorm,  # try nn.Identity
+            "residual": False,
         } | (ff_block_kwargs or {})
-        ## ff nets for each token
-        self.smpl_token_projector = nn.Identity()
-        self.translation_token_projector = nn.Identity() if not no_global_translation else None
-        if token_projectors_depth > 0:
-            self.smpl_token_projector = nn.Sequential(
-                [FFBlock(**ff_block_kwargs) for _ in range(token_projectors_depth)]
-            )
-            self.translation_token_projector = (
-                nn.Sequential([FFBlock(**ff_block_kwargs) for _ in range(token_projectors_depth)])
-                if not no_global_translation
-                else None
-            )
         # Prediction heads
         ## Translation head
         self.translation_head = LocationHead(**ff_block_kwargs) if not no_global_translation else None
@@ -176,6 +154,8 @@ class HPSLayer(torch.nn.Module):
         )
         ## Hand pose head
         self.hand_pose_head = HandsLayer(
+            token_dim=token_dim,
+            dropout=dropout,
             num_hand_joints=1 if body_type == "smpl" else 15,
             no_hand_joints=no_hand_joints,
             ff_block_kwargs=ff_block_kwargs,
@@ -184,43 +164,65 @@ class HPSLayer(torch.nn.Module):
 
     if TYPE_CHECKING:
 
-        def __call__(self, hidden_states: torch.Tensor) -> SMPLData:
+        def __call__(
+            self,
+            smpl_token: torch.Tensor,
+            hands_token: torch.Tensor | None = None,
+            translation_token: torch.Tensor | None = None,
+            scene_scale: torch.Tensor | None = None,
+            scene_center: torch.Tensor | None = None,
+        ) -> tuple[SMPLData, PoseTarget | None]:
             """Type hinting fix."""
-            return self.forward(hidden_states=hidden_states)
+            return self.forward(
+                smpl_token=smpl_token,
+                hands_token=hands_token,
+                translation_token=translation_token,
+                scene_scale=scene_scale,
+                scene_center=scene_center,
+            )
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
+        smpl_token: torch.Tensor,
+        hands_token: torch.Tensor | None = None,
+        translation_token: torch.Tensor | None = None,
         scene_scale: torch.Tensor | None = None,
         scene_center: torch.Tensor | None = None,
     ) -> tuple[SMPLData, PoseTarget | None]:
-        """Forward HPS hidden states."""
-        batch_size = hidden_states.shape[0]
-        # Prepare latent tokens
-        latent_tokens = self.latent_tokens.weight.unsqueeze(0).expand(batch_size, -1, -1)  # (B, num_tokens, D)
-        # Pass through latent transformer
-        latent_states = self.latent_model.forward(tgt=latent_tokens, memory=hidden_states)  # (B, num_tokens, D)
-        # Project each token
-        smpl_token = self.smpl_token_projector(latent_states[:, 0, :])  # (B, D)
-        translation_token = None
-        if self.translation_token_projector is not None:
-            translation_token = self.translation_token_projector(latent_states[:, 1, :])  # (B, D)
-        # Prediction heads
+        """Forward HPS hidden states.
+
+        Args:
+            smpl_token (torch.Tensor): The latent token for SMPL parameters of shape (..., token_dim)
+            hands_token (torch.Tensor | None, optional): The latent token for hand parameters of shape (..., token_dim).
+                If None, smpl_token is used. Defaults to None.
+            translation_token (torch.Tensor | None, optional): The latent token for global translation of shape
+                (..., token_dim). If None and global translation is predicted, smpl_token is used. Defaults to None.
+            scene_scale (torch.Tensor | None, optional): The scene scale for pose target computation of shape
+                (..., 1 or 3). Defaults to None.
+            scene_center (torch.Tensor | None, optional): The scene center for pose target computation of shape
+                (..., 3). Defaults to None.
+
+        Returns:
+            SMPLData: The predicted SMPL parameters
+            PoseTarget | None: The predicted pose target if global translation is predicted, else None
+
+        """
         ## Shape
         shape_parameters = self.shape_head(smpl_token)
         ## Pose
         full_pose = [self.body_pose_head(smpl_token)]
         if self.head_pose_head is not None:
             full_pose.append(self.head_pose_head(smpl_token))
-        full_pose.append(self.hand_pose_head(smpl_token))
+        full_pose.append(self.hand_pose_head(smpl_token if hands_token is None else hands_token))
         full_pose = torch.cat(full_pose, dim=-1)
+        full_pose = full_pose.reshape((*smpl_token.shape[:-1], -1, self.rotation_dim))
         full_pose = self.to_axis_angle(full_pose)
         if self.no_global_orientation:
             full_pose = pad(full_pose, (3, 0), "constant", 0)
         ## Translation
         xy = None
         if self.translation_head is not None:
-            xy, z = self.translation_head(translation_token).values()
+            xy, z = self.translation_head(translation_token if translation_token is not None else smpl_token).values()
 
         # Return SMPLData
         return SMPLData.from_full_pose(
@@ -266,3 +268,12 @@ class HPSLayer(torch.nn.Module):
         # if self.rotation_representation == "6d"
         rot_mats = rotation_6d_to_matrix(rotations)
         return matrix_to_axis_angle(rot_mats)
+
+    # def initialize(self) -> None:
+    #     init_depth = torch.tensor([[1 / 10.0]]) if self.inverse_depth else torch.tensor([[10.0]])
+    #     init_pose = torch.cat(
+    #         [torch.tensor([[1.0, 0, 0, 0, -1, 0]]), torch.tensor([[1.0, 0, 0, 0, 1, 0]]).tile(21)], dim=1
+    #     )
+
+    #     self.register_buffer("init_pose", init_pose)
+    #     self.register_buffer("init_depth", init_depth)

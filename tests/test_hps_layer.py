@@ -2,67 +2,123 @@ from __future__ import annotations
 
 import torch
 
-from src.tinyhumans.modules.hps_layer import HandsLayer, HPSLayer, ZeroLayer
+from src.tinyhumans.modules.hps_layer import ConstantLayer, HandsLayer, HPSLayer
 
 
-def test_zero_layer() -> None:
-    zero_layer = ZeroLayer(output_shape=6)
-    assert zero_layer(torch.randn(2, 4)).shape == (2, 6)
-    zero_layer = ZeroLayer(output_shape=(3, 4))
-    assert zero_layer(torch.randn(2, 4)).shape == (2, 3, 4)
+def test_constant_layer() -> None:
+    constant_layer = ConstantLayer(output_shape=6, value=0.0)
+    assert torch.allclose(constant_layer(torch.randn(2, 4)), torch.zeros(2, 6))
+    constant_layer = ConstantLayer(output_shape=(3, 4), value=12.0)
+    assert torch.allclose(constant_layer(torch.randn(2, 4)), torch.full((2, 3, 4), 12.0))
 
 
 def test_hands_layer() -> None:
-    hands_layer = HandsLayer(input_size=128, num_hand_joints=15)
-    assert hands_layer(torch.randn(2, 128)).shape == (2, 30 * 3)
-    hands_layer = HandsLayer(input_size=128, num_hand_joints=1)
+    hands_layer = HandsLayer(token_dim=128, num_hand_joints=15, rotation_representation="6D")
+    assert hands_layer(torch.randn(2, 128)).shape == (2, 30 * 6)
+    hands_layer = HandsLayer(token_dim=128, num_hand_joints=1, rotation_representation="axis_angle")
     assert hands_layer(torch.randn(2, 128)).shape == (2, 2 * 3)
-    hands_layer = HandsLayer(input_size=128, num_hand_joints=15, no_hand_joints=True)
-    assert hands_layer(torch.randn(2, 128)).shape == (2, 30 * 3)
-    assert torch.allclose(hands_layer(torch.randn(2, 128))[..., (1 * 3) : (15 * 3)], torch.zeros(2, 14 * 3))
-    assert torch.allclose(hands_layer(torch.randn(2, 128))[..., (16 * 3) : (30 * 3)], torch.zeros(2, 14 * 3))
-    hands_layer = HandsLayer(input_size=128, num_hand_joints=1, no_hand_joints=True)
-    assert hands_layer(torch.randn(2, 128)).shape == (2, 2 * 3)
-    assert not torch.allclose(hands_layer(torch.randn(2, 128))[..., 0:3], torch.zeros(2, 1 * 3))
-    assert not torch.allclose(hands_layer(torch.randn(2, 128))[..., 3:6], torch.zeros(2, 1 * 3))
+    hands_layer = HandsLayer(
+        token_dim=128, num_hand_joints=15, no_hand_joints=True, rotation_representation="quaternion"
+    )
+    assert hands_layer(torch.randn(2, 128)).shape == (2, 30 * 4)
+    assert torch.allclose(hands_layer(torch.randn(2, 128))[..., (1 * 4) : (15 * 4)], torch.zeros(2, 14 * 4))
+    assert torch.allclose(hands_layer(torch.randn(2, 128))[..., (16 * 4) : (30 * 4)], torch.zeros(2, 14 * 4))
+    hands_layer = HandsLayer(
+        token_dim=128, num_hand_joints=1, no_hand_joints=True, ff_block_kwargs={"norm_fn": torch.nn.Identity}
+    )
+    assert hands_layer(torch.randn(2, 128)).shape == (2, 2 * 6)
+    assert not torch.allclose(hands_layer(torch.randn(2, 128))[..., 0:6], torch.zeros(2, 1 * 6))
+    assert not torch.allclose(hands_layer(torch.randn(2, 128))[..., 6:12], torch.zeros(2, 1 * 6))
 
 
-def test_hps_layer() -> None:
-    hps_layer = HPSLayer(input_size=256, body_type="smplx", no_hand_joints=True, no_head_joints=True)
-    smpl_data = hps_layer(torch.randn(2, 256))
+def test_hps_layer_smpl_head() -> None:
+    hps_layer = HPSLayer(
+        token_dim=256, body_type="smplx", no_hand_joints=True, no_head_joints=True, rotation_representation="6D"
+    )
+    smpl_data = hps_layer(torch.randn(2, 256), torch.randn(2, 256), torch.randn(2, 256))
+    smpl_data = hps_layer(torch.randn(2, 256))[0]
     assert torch.allclose(smpl_data.left_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert torch.allclose(smpl_data.right_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert torch.allclose(smpl_data.head_pose, torch.zeros(2, 1, 1, 3, 3))
-    hps_layer = HPSLayer(input_size=256, body_type="smplx", no_hand_joints=True, no_head_joints=False)
-    smpl_data = hps_layer(torch.randn(2, 256))
+    hps_layer = HPSLayer(
+        token_dim=256,
+        body_type="smplx",
+        no_hand_joints=True,
+        no_head_joints=False,
+        rotation_representation="axis_angle",
+    )
+    smpl_data = hps_layer(torch.randn(2, 256))[0]
     assert torch.allclose(smpl_data.left_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert torch.allclose(smpl_data.right_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert not torch.allclose(smpl_data.head_pose, torch.zeros(2, 1, 1, 3, 3))
-    hps_layer = HPSLayer(input_size=256, body_type="smplx", no_hand_joints=False, no_head_joints=True)
-    smpl_data = hps_layer(torch.randn(2, 256))
+    hps_layer = HPSLayer(
+        token_dim=256,
+        body_type="smplx",
+        no_hand_joints=False,
+        no_head_joints=True,
+        rotation_representation="quaternion",
+    )
+    smpl_data = hps_layer(torch.randn(2, 256))[0]
     assert not torch.allclose(smpl_data.left_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert not torch.allclose(smpl_data.right_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert torch.allclose(smpl_data.head_pose, torch.zeros(2, 1, 1, 3, 3))
-    hps_layer = HPSLayer(input_size=256, body_type="smplx", no_hand_joints=False, no_head_joints=False)
-    smpl_data = hps_layer(torch.randn(2, 256))
+    hps_layer = HPSLayer(token_dim=256, body_type="smplx", no_hand_joints=False, no_head_joints=False)
+    smpl_data = hps_layer(torch.randn(2, 256))[0]
     assert not torch.allclose(smpl_data.left_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert not torch.allclose(smpl_data.right_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert not torch.allclose(smpl_data.head_pose, torch.zeros(2, 1, 1, 3, 3))
 
-    hps_layer = HPSLayer(input_size=256, body_type="smplh", no_hand_joints=False)
-    smpl_data = hps_layer(torch.randn(2, 256))
+    hps_layer = HPSLayer(token_dim=256, body_type="smplh", no_hand_joints=False)
+    smpl_data = hps_layer(torch.randn(2, 256))[0]
     assert not torch.allclose(smpl_data.left_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert not torch.allclose(smpl_data.right_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
-    hps_layer = HPSLayer(input_size=256, body_type="smplh", no_hand_joints=True)
-    smpl_data = hps_layer(torch.randn(2, 256))
+    hps_layer = HPSLayer(token_dim=256, body_type="smplh", no_hand_joints=True)
+    smpl_data = hps_layer(torch.randn(2, 256))[0]
     assert torch.allclose(smpl_data.left_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert torch.allclose(smpl_data.right_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
 
-    hps_layer = HPSLayer(input_size=256, body_type="smplh", no_hand_joints=False)
-    smpl_data = hps_layer(torch.randn(2, 256))
+    hps_layer = HPSLayer(token_dim=256, body_type="smplh", no_hand_joints=False)
+    smpl_data = hps_layer(torch.randn(2, 256))[0]
     assert not torch.allclose(smpl_data.body_pose[..., 20:21, :], torch.zeros(2, 1, 1, 1, 3))
     assert not torch.allclose(smpl_data.body_pose[..., 21:22, :], torch.zeros(2, 1, 1, 1, 3))
-    hps_layer = HPSLayer(input_size=256, body_type="smpl", no_hand_joints=True)
-    smpl_data = hps_layer(torch.randn(2, 256))
+    hps_layer = HPSLayer(token_dim=256, body_type="smpl", no_hand_joints=True)
+    smpl_data = hps_layer(torch.randn(2, 256))[0]
     assert not torch.allclose(smpl_data.body_pose[..., 22:23, :], torch.zeros(2, 1, 1, 1, 3))
     assert not torch.allclose(smpl_data.body_pose[..., 23:24, :], torch.zeros(2, 1, 1, 1, 3))
+
+
+def test_hps_layer_translation_heads() -> None:
+    hps_layer = HPSLayer(token_dim=256, body_type="smpl", pose_target_convention="LogarithmicDisparitySpace")
+    pose_target = hps_layer(torch.randn(2, 256))[1]
+    assert pose_target.translation.shape == (2, 3)
+    assert pose_target.translation_scale.shape == (2, 1)
+    assert torch.allclose(pose_target.translation[:, -1], torch.ones(2))
+    assert not torch.allclose(pose_target.translation_scale, torch.ones(2, 1))
+
+    hps_layer = HPSLayer(token_dim=256, body_type="smpl", pose_target_convention="DisparitySpace")
+    pose_target = hps_layer(torch.randn(2, 256))[1]
+    assert pose_target.translation.shape == (2, 3)
+    assert pose_target.translation_scale.shape == (2, 1)
+    assert torch.allclose(pose_target.translation[:, -1], torch.ones(2))
+    assert not torch.allclose(pose_target.translation_scale, torch.ones(2, 1))
+
+    hps_layer = HPSLayer(token_dim=256, body_type="smpl", pose_target_convention="ApparentSize")
+    pose_target = hps_layer(torch.randn(2, 256))[1]
+    assert pose_target.translation.shape == (2, 3)
+    assert pose_target.translation_scale.shape == (2, 1)
+    assert torch.allclose(torch.norm(pose_target.translation, dim=-1), torch.ones(2))
+    assert not torch.allclose(pose_target.translation_scale, torch.ones(2, 1))
+
+    hps_layer = HPSLayer(token_dim=256, body_type="smpl", pose_target_convention="NormalizedSceneScaleAndTranslation")
+    pose_target = hps_layer(torch.randn(2, 256))[1]
+    assert pose_target.translation.shape == (2, 3)
+    assert pose_target.translation_scale.shape == (2, 1)
+    assert torch.allclose(torch.norm(pose_target.translation, dim=-1), torch.ones(2))
+    assert not torch.allclose(pose_target.translation_scale, torch.ones(2, 1))
+
+    hps_layer = HPSLayer(token_dim=256, body_type="smpl", pose_target_convention="ScaleShiftInvariantWTranslationScale")
+    pose_target = hps_layer(torch.randn(2, 256))[1]
+    assert pose_target.translation.shape == (2, 3)
+    assert pose_target.translation_scale.shape == (2, 1)
+    assert torch.allclose(torch.norm(pose_target.translation, dim=-1), torch.ones(2))
+    assert not torch.allclose(pose_target.translation_scale, torch.ones(2, 1))
