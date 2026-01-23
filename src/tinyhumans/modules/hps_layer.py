@@ -216,10 +216,10 @@ class HPSLayer(torch.nn.Module):
             full_pose.append(self.head_pose_head(smpl_token))
         full_pose.append(self.hand_pose_head(smpl_token if hands_token is None else hands_token))
         full_pose = torch.cat(full_pose, dim=-1)
+        if self.no_global_orientation:
+            full_pose = pad(full_pose, (self.rotation_dim, 0), "constant", 0)
         full_pose = full_pose.reshape((*smpl_token.shape[:-1], -1, self.rotation_dim))
         full_pose = self.to_axis_angle(full_pose)
-        if self.no_global_orientation:
-            full_pose = pad(full_pose, (3, 0), "constant", 0)
         ## Translation
         xy = None
         if self.translation_head is not None:
