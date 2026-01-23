@@ -171,7 +171,7 @@ class HPSLayer(torch.nn.Module):
             translation_token: torch.Tensor | None = None,
             scene_scale: torch.Tensor | None = None,
             scene_center: torch.Tensor | None = None,
-        ) -> tuple[SMPLData, PoseTarget | None]:
+        ) -> dict[str, SMPLData | PoseTarget | None]:
             """Type hinting fix."""
             return self.forward(
                 smpl_token=smpl_token,
@@ -188,7 +188,7 @@ class HPSLayer(torch.nn.Module):
         translation_token: torch.Tensor | None = None,
         scene_scale: torch.Tensor | None = None,
         scene_center: torch.Tensor | None = None,
-    ) -> tuple[SMPLData, PoseTarget | None]:
+    ) -> dict[str, SMPLData | PoseTarget | None]:
         """Forward HPS hidden states.
 
         Args:
@@ -203,8 +203,9 @@ class HPSLayer(torch.nn.Module):
                 (..., 3). Defaults to None.
 
         Returns:
-            SMPLData: The predicted SMPL parameters
-            PoseTarget | None: The predicted pose target if global translation is predicted, else None
+            dict[str, SMPLData | PoseTarget | None]: A dictionary containing:
+                - "smpl_data" (SMPLData): The predicted SMPL data
+                - "pose_target" (PoseTarget | None): The predicted pose target if not no_global_translation, else None
 
         """
         ## Shape
@@ -224,10 +225,13 @@ class HPSLayer(torch.nn.Module):
         if self.translation_head is not None:
             xy, z = self.translation_head(translation_token if translation_token is not None else smpl_token).values()
 
-        # Return SMPLData
-        return SMPLData.from_full_pose(
-            full_pose=full_pose, shape_parameters=shape_parameters, smpl_version=self.body_type
-        ), self.get_pose_target(xy, z, scene_scale=scene_scale, scene_center=scene_center)
+        # Return
+        return {
+            "smpl_data": SMPLData.from_full_pose(
+                full_pose=full_pose, shape_parameters=shape_parameters, smpl_version=self.body_type
+            ),
+            "pose_target": self.get_pose_target(xy, z, scene_scale=scene_scale, scene_center=scene_center),
+        }
 
     def get_pose_target(
         self,

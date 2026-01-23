@@ -29,7 +29,7 @@ def test_hps_transformer() -> None:
         dim_feedforward_multiplier=4,
         output_norm=torch.nn.LayerNorm,
     )
-    smpl_data, pose_target = hps_model(torch.randn(2, 12, 256))
+    smpl_data, pose_target = hps_model(torch.randn(2, 12, 256)).values()
     assert torch.allclose(smpl_data.left_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert torch.allclose(smpl_data.right_hand_pose[..., 1:15, :], torch.zeros(2, 1, 1, 14, 3))
     assert torch.allclose(smpl_data.head_pose, torch.zeros(2, 1, 1, 3, 3))

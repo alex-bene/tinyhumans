@@ -116,7 +116,7 @@ class HPSTransformer(torch.nn.Module):
             hidden_states: torch.Tensor,
             scene_scale: torch.Tensor | None = None,
             scene_center: torch.Tensor | None = None,
-        ) -> tuple[SMPLData, PoseTarget | None]:
+        ) -> dict[str, SMPLData | PoseTarget | None]:
             """Type hinting fix."""
             return self.forward(hidden_states=hidden_states, scene_scale=scene_scale, scene_center=scene_center)
 
@@ -125,7 +125,7 @@ class HPSTransformer(torch.nn.Module):
         hidden_states: torch.Tensor,
         scene_scale: torch.Tensor | None = None,
         scene_center: torch.Tensor | None = None,
-    ) -> tuple[SMPLData, PoseTarget | None]:
+    ) -> dict[str, SMPLData | PoseTarget | None]:
         """Forward HPS hidden states."""
         batch_size = hidden_states.shape[0]
         # Prepare latent tokens
@@ -144,7 +144,6 @@ class HPSTransformer(torch.nn.Module):
         if latent_states.shape[1] > idx:
             hands_token = latent_states[:, idx, :]  # (B, D)
         # Prediction heads
-        print(smpl_token.shape, hands_token.shape, translation_token.shape if translation_token is not None else None)
         return self.hps_head.forward(
             smpl_token=smpl_token,
             hands_token=hands_token,
