@@ -49,28 +49,17 @@ class HandsLayer(nn.Module):
             "hidden_dim": 4 * token_dim,
             "bias": True,
             "dropout": dropout,
-            "mlp_type": "gated",
-            "activation_fn": F.silu,
+            "dropout_at_end": False,
+            "mlp_type": "vanilla",
+            "activation_fn": F.relu,
             "norm_first": True,
-            "norm_fn": nn.LayerNorm,  # try nn.Identity
+            "norm_fn": nn.LayerNorm,
             "residual": False,
         } | (ff_block_kwargs or {})
-        self.left_hand_pose_head = FFBlock(output_dim=self.rotation_dim, **ff_block_kwargs)  # first hand joint
-        self.left_hand_extra_pose_head = (
-            None
-            if num_hand_joints == 1
-            else ConstantLayer(output_shape=(num_hand_joints - 1) * self.rotation_dim)
-            if no_hand_joints
-            else FFBlock(output_dim=(num_hand_joints - 1) * self.rotation_dim, **ff_block_kwargs)
-        )
-        self.right_hand_pose_head = FFBlock(output_dim=self.rotation_dim, **ff_block_kwargs)
-        self.right_hand_extra_pose_head = (
-            None
-            if num_hand_joints == 1
-            else ConstantLayer(output_shape=(num_hand_joints - 1) * self.rotation_dim)
-            if no_hand_joints
-            else FFBlock(output_dim=(num_hand_joints - 1) * self.rotation_dim, **ff_block_kwargs)
-        )
+        num_pred_hand_joints = 1 + (0 if no_hand_joints else num_hand_joints - 1)
+        self.left_hand_pose_head = FFBlock(output_dim=num_pred_hand_joints * self.rotation_dim, **ff_block_kwargs)
+        self.right_hand_pose_head = FFBlock(output_dim=num_pred_hand_joints * self.rotation_dim, **ff_block_kwargs)
+        self.num_pad_joints = num_hand_joints - 1 if no_hand_joints else 0
 
     if TYPE_CHECKING:
 
@@ -80,14 +69,12 @@ class HandsLayer(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Forward hand layer."""
-        hand_pose = [self.left_hand_pose_head(hidden_states)]
-        if self.left_hand_extra_pose_head is not None:
-            hand_pose.append(self.left_hand_extra_pose_head(hidden_states))
-        hand_pose.append(self.right_hand_pose_head(hidden_states))
-        if self.right_hand_extra_pose_head is not None:
-            hand_pose.append(self.right_hand_extra_pose_head(hidden_states))
+        left_hand_pose = self.left_hand_pose_head(hidden_states)
+        left_hand_pose = pad(left_hand_pose, (0, self.num_pad_joints * self.rotation_dim), "constant", 0)
+        right_hand_pose = self.right_hand_pose_head(hidden_states)
+        right_hand_pose = pad(right_hand_pose, (0, self.num_pad_joints * self.rotation_dim), "constant", 0)
 
-        return torch.cat(hand_pose, dim=-1)
+        return torch.cat([left_hand_pose, right_hand_pose], dim=-1)
 
 
 class HPSLayer(torch.nn.Module):
@@ -126,10 +113,11 @@ class HPSLayer(torch.nn.Module):
             "hidden_dim": 4 * token_dim,
             "bias": True,
             "dropout": dropout,
-            "mlp_type": "gated",
-            "activation_fn": F.silu,
+            "dropout_at_end": False,
+            "mlp_type": "vanilla",
+            "activation_fn": F.relu,
             "norm_first": True,
-            "norm_fn": nn.LayerNorm,  # try nn.Identity
+            "norm_fn": nn.LayerNorm,
             "residual": False,
         } | (ff_block_kwargs or {})
         # Prediction heads
