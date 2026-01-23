@@ -103,7 +103,14 @@ class HPSTransformer(torch.nn.Module):
             no_head_joints=no_head_joints,
             dropout=dropout,
             body_type=body_type,
-            ff_block_kwargs=ff_block_kwargs | {"norm_first": True, "residual": False},
+            ff_block_kwargs=ff_block_kwargs
+            | {
+                "norm_first": True,
+                "residual": False,
+                "dropout_at_end": False,
+                "mlp_type": "vanilla",
+                "activation_fn": F.relu,
+            },
             pose_target_convention=pose_target_convention,
             rotation_representation=rotation_representation,
         )

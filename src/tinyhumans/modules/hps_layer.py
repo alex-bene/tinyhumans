@@ -120,9 +120,11 @@ class HPSLayer(torch.nn.Module):
             "norm_fn": nn.LayerNorm,
             "residual": False,
         } | (ff_block_kwargs or {})
+        dropout_at_end = ff_block_kwargs.pop("dropout_at_end")
         # Prediction heads
         ## Translation head
         self.translation_head = LocationHead(**ff_block_kwargs) if not no_global_translation else None
+        ff_block_kwargs["dropout_at_end"] = dropout_at_end
         self.pose_target_cls: type[PoseTarget] = PoseTargetFactory[pose_target_convention]
         ## Shape head
         self.shape_head = FFBlock(output_dim=num_shape_parameters, **ff_block_kwargs)
