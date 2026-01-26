@@ -16,7 +16,7 @@ def test_hps_transformer() -> None:
         dropout=0.1,
         token_projectors_depth=3,
         body_type="smplx",
-        ff_block_kwargs=None,
+        token_projectors_ff_block_kwargs=None,
         pose_target_convention="LogarithmicDisparitySpace",
         rotation_representation="6d",
         separate_hands_token=False,

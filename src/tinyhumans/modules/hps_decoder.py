@@ -41,7 +41,7 @@ class HPSDecoder(torch.nn.Module):
         bias: bool = True,
         batch_first: bool = True,
         dim_feedforward_multiplier: int = 4,
-        output_norm: nn.Module = nn.LayerNorm,
+        output_norm: nn.Module | None = None,
     ) -> None:
         super().__init__()
         ## Latent tokens
@@ -57,12 +57,9 @@ class HPSDecoder(torch.nn.Module):
             "batch_first": batch_first,
             "norm_first": norm_first,
             "bias": bias,
-            "num_layers": num_layers,
-            "output_norm": output_norm,
         }
-        num_layers = latent_transformer_kwargs.pop("num_layers")
-        output_norm = latent_transformer_kwargs.pop("output_norm")(latent_transformer_kwargs["d_model"])
         latent_model_layer = nn.TransformerDecoderLayer(**latent_transformer_kwargs)
+        output_norm = output_norm(latent_transformer_kwargs["d_model"]) if output_norm is not None else None
         self.latent_model = nn.TransformerDecoder(latent_model_layer, num_layers=num_layers, norm=output_norm)
         # Token projectors
         ## ff nets for each token
