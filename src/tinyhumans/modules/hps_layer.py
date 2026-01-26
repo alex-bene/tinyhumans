@@ -10,9 +10,8 @@ from pytorch3d.transforms.rotation_conversions import (
 )
 from smplcodec import SMPLVersion
 from tinytools.threeD.pose_target import PoseTarget, PoseTargetFactory
-from tinytools.torch.modules import ConstantLayer, FFBlock, LocationHead
+from tinytools.torch.modules import ConstantLayer, LocationHead
 from torch import nn
-from torch.nn import functional as F
 from torch.nn.functional import pad
 
 from tinyhumans.datatypes import SMPLData
@@ -26,9 +25,7 @@ class HandsLayer(nn.Module):
         self,
         token_dim: int,
         num_hand_joints: int,
-        dropout: float = 0.1,
         no_hand_joints: bool = False,
-        ff_block_kwargs: dict | None = None,
         rotation_representation: Literal["6D", "axis_angle", "quaternion"] = "6D",
     ) -> None:
         super().__init__()
@@ -43,22 +40,23 @@ class HandsLayer(nn.Module):
         self.rotation_dim = (
             6 if self.rotation_representation == "6d" else 3 if self.rotation_representation == "axis_angle" else 4
         )
+        pad_vector = (
+            torch.zeros(3)
+            if self.rotation_dim == 3
+            else torch.tensor([1, 0, 0, 0, 1, 0])
+            if self.rotation_dim == 6
+            else torch.tensor([1, 0, 0, 0])  # quaternion identity
+        )
+        self.register_buffer("pad_vector", pad_vector)
+        self.pad_vector = pad_vector
 
-        ff_block_kwargs = {
-            "input_dim": token_dim,
-            "hidden_dim": 4 * token_dim,
-            "bias": True,
-            "dropout": dropout,
-            "dropout_at_end": False,
-            "mlp_type": "vanilla",
-            "activation_fn": F.relu,
-            "norm_first": True,
-            "norm_fn": nn.LayerNorm,
-            "residual": False,
-        } | (ff_block_kwargs or {})
         num_pred_hand_joints = 1 + (0 if no_hand_joints else num_hand_joints - 1)
-        self.left_hand_pose_head = FFBlock(output_dim=num_pred_hand_joints * self.rotation_dim, **ff_block_kwargs)
-        self.right_hand_pose_head = FFBlock(output_dim=num_pred_hand_joints * self.rotation_dim, **ff_block_kwargs)
+        self.left_hand_pose_head = nn.Linear(
+            in_features=token_dim, out_features=num_pred_hand_joints * self.rotation_dim, bias=True
+        )
+        self.right_hand_pose_head = nn.Linear(
+            in_features=token_dim, out_features=num_pred_hand_joints * self.rotation_dim, bias=True
+        )
         self.num_pad_joints = num_hand_joints - 1 if no_hand_joints else 0
 
     if TYPE_CHECKING:
@@ -69,12 +67,21 @@ class HandsLayer(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Forward hand layer."""
-        left_hand_pose = self.left_hand_pose_head(hidden_states)
-        left_hand_pose = pad(left_hand_pose, (0, self.num_pad_joints * self.rotation_dim), "constant", 0)
+        left_hand_pose: torch.Tensor = self.left_hand_pose_head(hidden_states)
+        left_hand_pose = self.pad_joints(left_hand_pose)
         right_hand_pose = self.right_hand_pose_head(hidden_states)
-        right_hand_pose = pad(right_hand_pose, (0, self.num_pad_joints * self.rotation_dim), "constant", 0)
+        right_hand_pose = self.pad_joints(right_hand_pose)
 
         return torch.cat([left_hand_pose, right_hand_pose], dim=-1)
+
+    def pad_joints(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Pad the last dimension of a tensor with a given vector num_pad times."""
+        if self.num_pad_joints <= 0:
+            return tensor
+        pad_vectors = self.pad_vector.repeat(self.num_pad_joints).expand(
+            *tensor.shape[:-1], self.num_pad_joints * self.pad_vector.shape[-1]
+        )
+        return torch.cat([tensor, pad_vectors], dim=-1)
 
 
 class HPSLayer(torch.nn.Module):
@@ -88,9 +95,7 @@ class HPSLayer(torch.nn.Module):
         no_global_translation: bool = False,
         no_hand_joints: bool = True,
         no_head_joints: bool = True,
-        dropout: float = 0.1,
         body_type: Literal["smpl", "smplh", "smplx"] = "smpl",
-        ff_block_kwargs: dict | None = None,
         pose_target_convention: str = "LogarithmicDisparitySpace",
         rotation_representation: Literal["6d", "axis_angle", "quaternion"] = "6d",
     ) -> None:
@@ -107,36 +112,21 @@ class HPSLayer(torch.nn.Module):
         self.rotation_dim = (
             6 if self.rotation_representation == "6d" else 3 if self.rotation_representation == "axis_angle" else 4
         )
-        # Token projectors
-        ff_block_kwargs = {
-            "input_dim": token_dim,
-            "hidden_dim": 4 * token_dim,
-            "bias": True,
-            "dropout": dropout,
-            "dropout_at_end": False,
-            "mlp_type": "vanilla",
-            "activation_fn": F.relu,
-            "norm_first": True,
-            "norm_fn": nn.LayerNorm,
-            "residual": False,
-        } | (ff_block_kwargs or {})
-        dropout_at_end = ff_block_kwargs.pop("dropout_at_end")
         # Prediction heads
         ## Translation head
-        self.translation_head = LocationHead(**ff_block_kwargs) if not no_global_translation else None
-        ff_block_kwargs["dropout_at_end"] = dropout_at_end
+        self.translation_head = LocationHead(input_dim=token_dim) if not no_global_translation else None
         self.pose_target_cls: type[PoseTarget] = PoseTargetFactory[pose_target_convention]
         ## Shape head
-        self.shape_head = FFBlock(output_dim=num_shape_parameters, **ff_block_kwargs)
+        self.shape_head = nn.Linear(in_features=token_dim, out_features=num_shape_parameters)
         ## Body pose head
         self.no_global_orientation = no_global_orientation
         num_body_joints = 21
         if not self.no_global_orientation:
             num_body_joints += 1
-        self.body_pose_head = FFBlock(output_dim=num_body_joints * self.rotation_dim, **ff_block_kwargs)
+        self.body_pose_head = nn.Linear(in_features=token_dim, out_features=num_body_joints * self.rotation_dim)
         ## Head pose head
         self.head_pose_head = (
-            FFBlock(output_dim=3 * self.rotation_dim, **ff_block_kwargs)
+            nn.Linear(in_features=token_dim, out_features=3 * self.rotation_dim)
             if body_type == "smplx" and not no_head_joints
             else ConstantLayer(output_shape=3 * self.rotation_dim)
             if body_type == "smplx"
@@ -145,10 +135,8 @@ class HPSLayer(torch.nn.Module):
         ## Hand pose head
         self.hand_pose_head = HandsLayer(
             token_dim=token_dim,
-            dropout=dropout,
             num_hand_joints=1 if body_type == "smpl" else 15,
             no_hand_joints=no_hand_joints,
-            ff_block_kwargs=ff_block_kwargs,
             rotation_representation=rotation_representation,
         )
 
@@ -206,10 +194,10 @@ class HPSLayer(torch.nn.Module):
             full_pose.append(self.head_pose_head(smpl_token))
         full_pose.append(self.hand_pose_head(smpl_token if hands_token is None else hands_token))
         full_pose = torch.cat(full_pose, dim=-1)
-        if self.no_global_orientation:
-            full_pose = pad(full_pose, (self.rotation_dim, 0), "constant", 0)
         full_pose = full_pose.reshape((*smpl_token.shape[:-1], -1, self.rotation_dim))
         full_pose = self.to_axis_angle(full_pose)
+        if self.no_global_orientation:
+            full_pose = pad(full_pose, (3, 0), "constant", 0)
         ## Translation
         xy = None
         if self.translation_head is not None:
@@ -236,7 +224,7 @@ class HPSLayer(torch.nn.Module):
         translation_scale = None
         if self.pose_target_cls.pose_target_convention in ("LogarithmicDisparitySpace", "DisparitySpace"):
             translation_scale = z
-            translation = torch.cat([xy, torch.ones_like(z)], dim=-1)
+            translation = torch.cat([xy, torch.zeros_like(z)], dim=-1)
         elif self.pose_target_cls.pose_target_convention in (
             "ApparentSize",
             "NormalizedSceneScaleAndTranslation",
