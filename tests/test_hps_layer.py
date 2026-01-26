@@ -21,14 +21,18 @@ def test_hands_layer() -> None:
         token_dim=128, num_hand_joints=15, no_hand_joints=True, rotation_representation="quaternion"
     )
     assert hands_layer(torch.randn(2, 128)).shape == (2, 30 * 4)
-    assert torch.allclose(hands_layer(torch.randn(2, 128))[..., (1 * 4) : (15 * 4)], torch.zeros(2, 14 * 4))
-    assert torch.allclose(hands_layer(torch.randn(2, 128))[..., (16 * 4) : (30 * 4)], torch.zeros(2, 14 * 4))
-    hands_layer = HandsLayer(
-        token_dim=128, num_hand_joints=1, no_hand_joints=True, ff_block_kwargs={"norm_fn": torch.nn.Identity}
+    assert torch.allclose(
+        hands_layer(torch.randn(2, 128))[..., (1 * 4) : (15 * 4)].view(2, 14, 4)[..., 1:], torch.zeros(2, 14, 3)
     )
-    assert hands_layer(torch.randn(2, 128)).shape == (2, 2 * 6)
-    assert not torch.allclose(hands_layer(torch.randn(2, 128))[..., 0:6], torch.zeros(2, 1 * 6))
-    assert not torch.allclose(hands_layer(torch.randn(2, 128))[..., 6:12], torch.zeros(2, 1 * 6))
+    assert torch.allclose(
+        hands_layer(torch.randn(2, 128))[..., (16 * 4) : (30 * 4)].view(2, 14, 4)[..., 1:], torch.zeros(2, 14, 3)
+    )
+    assert torch.allclose(
+        hands_layer(torch.randn(2, 128))[..., (1 * 4) : (15 * 4)].view(2, 14, 4)[..., 0], torch.ones(2, 14)
+    )
+    assert torch.allclose(
+        hands_layer(torch.randn(2, 128))[..., (16 * 4) : (30 * 4)].view(2, 14, 4)[..., 0], torch.ones(2, 14)
+    )
 
 
 def test_hps_layer_smpl_head() -> None:
@@ -92,14 +96,14 @@ def test_hps_layer_translation_heads() -> None:
     pose_target = hps_layer(torch.randn(2, 256))["pose_target"]
     assert pose_target.translation.shape == (2, 3)
     assert pose_target.translation_scale.shape == (2, 1)
-    assert torch.allclose(pose_target.translation[:, -1], torch.ones(2))
+    assert torch.allclose(pose_target.translation[:, -1], torch.zeros(2))
     assert not torch.allclose(pose_target.translation_scale, torch.ones(2, 1))
 
     hps_layer = HPSLayer(token_dim=256, body_type="smpl", pose_target_convention="DisparitySpace")
     pose_target = hps_layer(torch.randn(2, 256))["pose_target"]
     assert pose_target.translation.shape == (2, 3)
     assert pose_target.translation_scale.shape == (2, 1)
-    assert torch.allclose(pose_target.translation[:, -1], torch.ones(2))
+    assert torch.allclose(pose_target.translation[:, -1], torch.zeros(2))
     assert not torch.allclose(pose_target.translation_scale, torch.ones(2, 1))
 
     hps_layer = HPSLayer(token_dim=256, body_type="smpl", pose_target_convention="ApparentSize")

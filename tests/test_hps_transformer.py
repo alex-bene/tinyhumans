@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import torch
 
-from src.tinyhumans.modules.hps_transformer import HPSTransformer
+from tinyhumans.modules.hps_decoder import HPSDecoder
 
 
 def test_hps_transformer() -> None:
-    hps_model = HPSTransformer(
+    hps_model = HPSDecoder(
         latent_dim=256,
         num_shape_parameters=10,
         no_global_orientation=False,
@@ -36,5 +36,5 @@ def test_hps_transformer() -> None:
 
     assert pose_target.translation.shape == (2, 3)
     assert pose_target.translation_scale.shape == (2, 1)
-    assert torch.allclose(pose_target.translation[:, -1], torch.ones(2))
+    assert torch.allclose(pose_target.translation[:, -1], torch.zeros(2))
     assert not torch.allclose(pose_target.translation_scale, torch.ones(2, 1))
