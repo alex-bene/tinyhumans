@@ -1,4 +1,4 @@
-"""HPS Transformer module."""
+"""HPS Decoder module."""
 
 from typing import TYPE_CHECKING, Literal
 
@@ -13,8 +13,8 @@ from tinyhumans.datatypes import SMPLData
 from .hps_layer import HPSLayer
 
 
-class HPSTransformer(torch.nn.Module):
-    """HPS Transformer model.
+class HPSDecoder(torch.nn.Module):
+    """HPS Decoder model.
 
     A transformer-based model that predicts SMPL parameters from latent tokens.
     """
@@ -101,16 +101,7 @@ class HPSTransformer(torch.nn.Module):
             no_global_orientation=no_global_orientation,
             no_hand_joints=no_hand_joints,
             no_head_joints=no_head_joints,
-            dropout=dropout,
             body_type=body_type,
-            ff_block_kwargs=ff_block_kwargs
-            | {
-                "norm_first": True,
-                "residual": False,
-                "dropout_at_end": False,
-                "mlp_type": "vanilla",
-                "activation_fn": F.relu,
-            },
             pose_target_convention=pose_target_convention,
             rotation_representation=rotation_representation,
         )
