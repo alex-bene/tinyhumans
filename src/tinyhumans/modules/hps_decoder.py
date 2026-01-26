@@ -29,8 +29,8 @@ class HPSDecoder(torch.nn.Module):
         no_head_joints: bool = True,
         dropout: float = 0.1,
         token_projectors_depth: int = 1,
+        token_projectors_ff_block_kwargs: dict | None = None,
         body_type: Literal["smpl", "smplh", "smplx"] = "smpl",
-        ff_block_kwargs: dict | None = None,
         pose_target_convention: str = "LogarithmicDisparitySpace",
         rotation_representation: Literal["6d", "axis_angle", "quaternion"] = "6d",
         separate_hands_token: bool = False,
@@ -65,26 +65,26 @@ class HPSDecoder(torch.nn.Module):
         latent_model_layer = nn.TransformerDecoderLayer(**latent_transformer_kwargs)
         self.latent_model = nn.TransformerDecoder(latent_model_layer, num_layers=num_layers, norm=output_norm)
         # Token projectors
-        ff_block_kwargs = {
-            "input_dim": latent_dim,
-            "hidden_dim": dim_feedforward_multiplier * latent_dim,
-            "bias": bias,
-            "dropout": dropout,
-            "mlp_type": "gated",
-            "activation_fn": F.silu,
-            "norm_first": norm_first,
-            "norm_fn": nn.LayerNorm,
-            "residual": True,
-        } | (ff_block_kwargs or {})
         ## ff nets for each token
         self.smpl_token_projector = nn.Identity()
         self.translation_token_projector = nn.Identity() if not no_global_translation else None
         if token_projectors_depth > 0:
+            token_projectors_ff_block_kwargs = {
+                "input_dim": latent_dim,
+                "hidden_dim": dim_feedforward_multiplier * latent_dim,
+                "bias": bias,
+                "dropout": dropout,
+                "mlp_type": "gated",
+                "activation_fn": F.silu,
+                "norm_first": norm_first,
+                "norm_fn": nn.LayerNorm,
+                "residual": True,
+            } | (token_projectors_ff_block_kwargs or {})
             self.smpl_token_projector = nn.Sequential(
-                *(FFBlock(**ff_block_kwargs) for _ in range(token_projectors_depth))
+                *(FFBlock(**token_projectors_ff_block_kwargs) for _ in range(token_projectors_depth))
             )
             self.translation_token_projector = (
-                nn.Sequential(*(FFBlock(**ff_block_kwargs) for _ in range(token_projectors_depth)))
+                nn.Sequential(*(FFBlock(**token_projectors_ff_block_kwargs) for _ in range(token_projectors_depth)))
                 if not no_global_translation
                 else None
             )
